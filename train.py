@@ -14,7 +14,8 @@ import torch.nn as nn
 
 import datasets
 import util
-from alexnet import AlexNet
+from mobilenetv2 import MobileNetV2
+from vgg import VGG
 
 loss = nn.CrossEntropyLoss()
 
@@ -71,7 +72,6 @@ if __name__ == '__main__':
     parser.add_argument('--in-memory', action='store_true',
                         help='ImageNet Dataloader setting (store in memory)')
     parser.add_argument('--input-size', type=int, help='spatial width/height of input')
-    parser.add_argument('--reshape-size', type=int, default=1, help='checkerboard reshape size')
     parser.add_argument('--n-class', type=int, help='number of classes')
     parser.add_argument('--save-path', required=True, help='path to save model')
     args = parser.parse_args()
@@ -87,13 +87,13 @@ if __name__ == '__main__':
     # load dataset
     data = datasets.get_dataset(args.dataset_root, args.dataset, args.batch_size,
                                 args.cuda, args.aug, in_memory=args.in_memory,
-                                input_size=args.input_size, reshape_size=args.reshape_size)
+                                input_size=args.input_size)
     train_dataset, train_loader, test_dataset, test_loader = data
 
     # load or create model
     if args.load_path == None:
-        model = AlexNet(in_channels=3*args.reshape_size*args.reshape_size,
-                        num_classes=args.n_class)
+        # model = MobileNetV2(num_classes=args.n_class)
+        model = VGG('VGG11', act='relu', group_size=8)
     else:
         model = torch.load(args.load_path)
 

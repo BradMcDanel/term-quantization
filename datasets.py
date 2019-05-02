@@ -43,115 +43,37 @@ class Fill(object):
         img = Image.fromarray(img)
         return img
 
-class Reshape(object):
-    def __init__(self, reshape_size):
-        self.s = reshape_size
-        self.idxs = list(range(self.s))
-    
-    def __call__(self, x):
-        if self.s == 1:
-            return x
-        C, W, H = x.shape
-        h = torch.stack([x[:, i::self.s, j::self.s] for i, j in product(self.idxs, self.idxs)], 1)
-        h = h.reshape(-1, W // self.s, H // self.s)
-        return h
-
-
-class FashionMNIST(datasets.MNIST):
-    urls = [
-        'http://fashion-mnist.s3-website.eu-central-1.amazonaws.com/train-images-idx3-ubyte.gz',
-        'http://fashion-mnist.s3-website.eu-central-1.amazonaws.com/train-labels-idx1-ubyte.gz',
-        'http://fashion-mnist.s3-website.eu-central-1.amazonaws.com/t10k-images-idx3-ubyte.gz',
-        'http://fashion-mnist.s3-website.eu-central-1.amazonaws.com/t10k-labels-idx1-ubyte.gz',
-    ]
-
 def get_dataset(dataset_root, dataset, batch_size, is_cuda=True, aug='+', sample_ratio=1,
-                in_memory=False, val_only=False, input_size=224, reshape_size=1):
-    if dataset == 'mnist':
-        train, train_loader, test, test_loader = get_mnist(dataset_root, batch_size, is_cuda, aug)
-    elif dataset == 'fashion-mnist':
-        train, train_loader, test, test_loader = get_fashion_mnist(dataset_root, batch_size, is_cuda, aug)
-    elif dataset == 'cifar10':
-        train, train_loader, test, test_loader = get_cifar10(dataset_root, batch_size, is_cuda, aug,
-                                                             reshape_size=reshape_size)
+                in_memory=False, val_only=False, input_size=224):
+    if dataset == 'cifar10':
+        train, train_loader, test, test_loader = get_cifar10(dataset_root, batch_size, is_cuda, aug)
+                                                             
     elif dataset == 'imagenet':
         train, train_loader, test, test_loader = get_imagenet(dataset_root, batch_size,
                                                               is_cuda, in_memory=in_memory,
                                                               val_only=val_only,
-                                                              input_size=input_size,
-                                                              reshape_size=reshape_size)
+                                                              input_size=input_size)
     else:
         raise ValueError('Dataset `{}` not found'.format(dataset))
 
     return train, train_loader, test, test_loader
 
-def get_mnist(dataset_root, batch_size, is_cuda=True, aug='+'):
-    kwargs = {'num_workers': 12, 'pin_memory': True} if is_cuda else {}
-    train = datasets.MNIST(os.path.join(dataset_root, 'mnist'), train=True, download=True, 
-                        transform=transforms.Compose([
-                            transforms.RandomCrop(32, padding=4),
-                            transforms.RandomHorizontalFlip(),
-                            transforms.ToTensor(),
-                            transforms.Normalize((0.1307,), (0.3081,)),
-                        ]))
-    test = datasets.MNIST(os.path.join(dataset_root, 'mnist'), train=False, download=True, 
-                        transform=transforms.Compose([
-                            transforms.Pad(2),
-                            transforms.ToTensor(),
-                            transforms.Normalize((0.1307,), (0.3081,)),
-                        ]))
-    train_loader = torch.utils.data.DataLoader(train, batch_size=batch_size,
-                                               shuffle=True, drop_last=False, **kwargs)
-    test_loader = torch.utils.data.DataLoader(test, batch_size=batch_size,
-                                               shuffle=False, drop_last=False, **kwargs)
-    
-    train_loader.num_samples = len(train)
-    test_loader.num_samples = len(test)
-    return train, train_loader, test, test_loader
 
-def get_fashion_mnist(dataset_root, batch_size, is_cuda=True, aug='+'):
-    kwargs = {'num_workers': 12, 'pin_memory': True} if is_cuda else {}
-    train = FashionMNIST(os.path.join(dataset_root, 'fashion_mnist'), train=True, download=True, 
-                        transform=transforms.Compose([
-                            transforms.RandomCrop(32, padding=2),
-                            transforms.ToTensor(),
-                            transforms.Normalize((0.1307,), (0.3081,)),
-                        ]))
-    test = FashionMNIST(os.path.join(dataset_root, 'fashion_mnist'), train=False, download=True, 
-                        transform=transforms.Compose([
-                            transforms.Pad(2),
-                            transforms.ToTensor(),
-                            transforms.Normalize((0.1307,), (0.3081,)),
-                        ]))
-    train_loader = torch.utils.data.DataLoader(train, batch_size=batch_size,
-                                               shuffle=True, drop_last=False, **kwargs)
-    test_loader = torch.utils.data.DataLoader(test, batch_size=batch_size,
-                                              shuffle=False, drop_last=False, **kwargs)
-    
-    train_loader.num_samples = len(train)
-    test_loader.num_samples = len(test)
-    return train, train_loader, test, test_loader
-
-
-def get_cifar10(dataset_root, batch_size, is_cuda=True, aug='+', reshape_size=1):
+def get_cifar10(dataset_root, batch_size, is_cuda=True, aug='+'):
     kwargs = {'num_workers': 16, 'pin_memory': True} if is_cuda else {}
     stds = (0.247, 0.243, 0.261)
 
     if aug == '-':
         transform = [
             transforms.ToTensor(),
-            transforms.Resize(224),
             transforms.Normalize((0.4914, 0.4822, 0.4465), stds),
-            Reshape(reshape_size),
         ] 
     elif aug == '+':
         transform = [
             transforms.RandomCrop(32, padding=4),
-            transforms.Resize(224),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize((0.4914, 0.4822, 0.4465), stds),
-            Reshape(reshape_size),
         ]
     else:
         raise ValueError('Invalid Augmentation setting `{}` not found'.format(aug))
@@ -160,10 +82,8 @@ def get_cifar10(dataset_root, batch_size, is_cuda=True, aug='+', reshape_size=1)
                              transform=transforms.Compose(transform))
     test = datasets.CIFAR10(os.path.join(dataset_root, 'cifar10'), train=False, download=True, 
                             transform=transforms.Compose([
-                                transforms.Resize(224),
                                 transforms.ToTensor(),
                                 transforms.Normalize((0.4914, 0.4822, 0.4465), stds),
-                                Reshape(reshape_size),
                             ]))
 
     train_loader = torch.utils.data.DataLoader(train, batch_size=batch_size,
@@ -175,8 +95,7 @@ def get_cifar10(dataset_root, batch_size, is_cuda=True, aug='+', reshape_size=1)
     return train, train_loader, test, test_loader
 
 def get_imagenet(dataset_root, batch_size, is_cuda=True, num_workers=16,
-                 cache_mul=16, in_memory=False, val_only=False, input_size=224, 
-                 reshape_size=1):
+                 cache_mul=16, in_memory=False, val_only=False, input_size=224):
     train_path = os.path.join(dataset_root, 'imagenet-msgpack', 'ILSVRC-train.bin')
     val_path = os.path.join(dataset_root, 'imagenet-msgpack', 'ILSVRC-val.bin')
     kwargs = {'num_workers': 32, 'pin_memory': True} if is_cuda else {}
@@ -195,7 +114,6 @@ def get_imagenet(dataset_root, batch_size, is_cuda=True, num_workers=16,
                                     transforms.RandomHorizontalFlip(),
                                     transforms.ToTensor(),
                                     normalize,
-                                    Reshape(reshape_size),
                                 ]))
         train_loader = torch.utils.data.DataLoader(train, batch_size=batch_size,
                                                     shuffle=True, drop_last=False, **kwargs)
@@ -213,7 +131,6 @@ def get_imagenet(dataset_root, batch_size, is_cuda=True, num_workers=16,
                                 transforms.CenterCrop(input_size),
                                 transforms.ToTensor(),
                                 normalize,
-                                Reshape(reshape_size),
                             ]))
     test_loader = torch.utils.data.DataLoader(test, batch_size=batch_size,
                                                 shuffle=False, drop_last=False, **kwargs)
