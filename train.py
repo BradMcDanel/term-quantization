@@ -202,6 +202,8 @@ def main_worker(gpu, ngpus_per_node, args):
         import pickle
         import msgpack
         from PIL import Image
+        import io
+
         def msgpack_load(x):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
@@ -246,9 +248,9 @@ def main_worker(gpu, ngpus_per_node, args):
                                         transforms.ToTensor(),
                                         normalize,
                                     ]))
-            train_loader = torch.utils.data.DataLoader(train, batch_size=args.batch_size,
-                                                    shuffle=True, drop_last=False,
-                                                    num_workers=args.workers)
+            train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size,
+                                                       shuffle=True, drop_last=False,
+                                                       num_workers=args.workers)
             train_loader.num_samples = num_train
         else:
             # do not bother loading train_dataset into memory if we are just
@@ -264,8 +266,8 @@ def main_worker(gpu, ngpus_per_node, args):
                                     normalize,
                                 ]))
         val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size,
-                                                shuffle=False, drop_last=False,
-                                                num_workers=args.workers)
+                                                 shuffle=False, drop_last=False,
+                                                 num_workers=args.workers)
         val_loader.num_samples = num_val
     ### end custom data loader
 
