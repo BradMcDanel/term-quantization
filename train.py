@@ -199,6 +199,9 @@ def main_worker(gpu, ngpus_per_node, args):
     # using custom msgpack data loader due to slow disk, replace with standard
     # pytorch ImageFolder loader for equivalent results (shown below in else)
     if args.msgpack_loader:
+        import pickle
+        import msgpack
+        from PIL import Image
         def msgpack_load(x):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
