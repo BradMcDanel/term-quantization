@@ -7,6 +7,7 @@ from pprint import pprint
 import numpy as np
 import torch
 import math
+from random import shuffle
 import torch.backends.cudnn as cudnn
 cudnn.benchmark = True 
 import torch.optim as optim
@@ -14,15 +15,15 @@ import torch.nn as nn
 
 import datasets
 import util
-from mobilenetv2 import MobileNetV2
-from vgg import VGG
+from alexnet import AlexNetCGM
+from resnet50 import ResNet50
 
 loss = nn.CrossEntropyLoss()
 
-def train_model(model, model_path, train_loader, test_loader, init_lr, epochs):
+def train_model(model, model_path, train_loader, train_dataset, val_loader, val_dataset, init_lr, epochs):
     # tracking stats
     if not hasattr(model, 'stats'):
-        model.stats = {'train_loss': [], 'test_acc': [], 'test_loss': [], 'lr': []}
+        model.stats = {'train_loss': [], 'val_acc': [], 'val_loss': [], 'lr': []}
 
     # optimizer
     ps = filter(lambda x: x.requires_grad, model.parameters())
@@ -39,21 +40,25 @@ def train_model(model, model_path, train_loader, test_loader, init_lr, epochs):
             break        
 
         train_loss = util.train(model, train_loader, optimizer, epoch, loss)
-        test_loss, test_acc = util.test(model, test_loader, epoch, loss)
+        val_loss, val_acc = util.test(model, val_loader, epoch, loss)
 
         print('LR        :: {}'.format(lr))
         print('Train Loss:: {}'.format(train_loss))
-        print('Test  Loss:: {}'.format(test_loss))
-        print('Test  Acc.:: {}'.format(test_acc))
+        print('Test  Loss:: {}'.format(val_loss))
+        print('Test  Acc.:: {}'.format(val_acc))
         model.stats['train_loss'].append(train_loss)
-        model.stats['test_loss'].append(test_loss)
-        model.stats['test_acc'].append(test_acc)
+        model.stats['val_loss'].append(val_loss)
+        model.stats['val_acc'].append(val_acc)
         model.stats['lr'].append(lr)
         model.optimizer = optimizer.state_dict()
 
         model.cpu()
         torch.save(model, model_path)
         model.cuda()
+
+        train_loader.reset()
+        val_loader.reset()
+        shuffle(train_dataset) # used in train_loader
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Basic Training Script')
@@ -87,13 +92,17 @@ if __name__ == '__main__':
     # load dataset
     data = datasets.get_dataset(args.dataset_root, args.dataset, args.batch_size,
                                 args.cuda, args.aug, in_memory=args.in_memory,
-                                input_size=args.input_size)
-    train_dataset, train_loader, test_dataset, test_loader = data
+                                input_size=args.input_size, val_only=True)
+    # data = datasets.get_imagenet_loaders(args.batch_size, debug=True)
+    train_dataset, train_loader, val_dataset, val_loader  = data
+    assert False
 
     # load or create model
     if args.load_path == None:
         # model = MobileNetV2(num_classes=args.n_class)
-        model = VGG('VGG11', act='relu', group_size=8)
+        # model = VGG('VGG11', act='relu', group_size=8)
+        model = AlexNetCGM()
+        # model = ResNet50()
     else:
         model = torch.load(args.load_path)
 
@@ -102,4 +111,4 @@ if __name__ == '__main__':
 
     print(model)
 
-    train_model(model, args.save_path, train_loader, test_loader, args.lr, args.epochs)
+    train_model(model, args.save_path, train_loader, train_dataset, val_loader, val_dataset, args.lr, args.epochs)

@@ -46,15 +46,15 @@ def train(model, train_loader, optimizer, epoch, loss):
     loss.train()
     end = time.time()
     model_loss = 0
-    pbar = tqdm(train_loader, leave=False)
-    for i, (data, target) in enumerate(pbar):
+    for i, data in enumerate(train_loader):
+        input = data[0]["data"]
+        target = data[0]["label"].squeeze().cuda().long()
+        train_loader_len = int(train_loader._size / 512)
         batchsize = len(target)
         data_time.update(time.time() - end)
-        if torch.cuda.is_available():
-            data, target = data.cuda(), target.cuda()
-        data, target = Variable(data), Variable(target)
+        input, target = Variable(input), Variable(target)
         optimizer.zero_grad()
-        prediction = data_parallel(model, data)
+        prediction = data_parallel(model, input)
         loss_output = loss(prediction, target)
 
         if isinstance(loss_output, tuple):
@@ -67,19 +67,19 @@ def train(model, train_loader, optimizer, epoch, loss):
         loss_meter.update(loss_value.item(), batchsize)
         optimizer.step()
 
-        pbar.set_postfix(loss='{loss_meter.avg:.4f}, comp={batch_time.avg:.4f}, data={data_time.avg:.4f}'.format(
-                         loss_meter=loss_meter, batch_time=batch_time, data_time=data_time))
-
         batch_time.update(time.time() - end)
         end = time.time()
 
+        if i % 10 == 0 and i > 1:
+            print('Epoch: [{0}][{1}/{2}] {3} {4}\t'.format(epoch, i, train_loader_len, data_time.avg, batch_time.avg))
+
     optimizer.zero_grad()
 
-    N = train_loader.num_samples
+    N = train_loader._size
     model_loss = model_loss / N
     return model_loss
 
-def test(model, test_loader, epoch, loss):
+def test(model, val_loader, epoch, loss):
     batch_time = AverageMeter()
     data_time = AverageMeter()
 
@@ -87,14 +87,14 @@ def test(model, test_loader, epoch, loss):
     loss.eval()
     end = time.time()
     num_correct, model_loss = 0, 0
-    for i, (data, target) in enumerate(test_loader):
+    for i, data in enumerate(val_loader):
+        input = data[0]["data"]
+        target = data[0]["label"].squeeze().cuda().long()
         batchsize = len(target)
         data_time.update(time.time() - end)
-        if torch.cuda.is_available():
-            data, target = data.cuda(), target.cuda()
         with torch.no_grad():
-            data, target = Variable(data), Variable(target)
-            prediction = data_parallel(model, data)
+            input, target = Variable(input), Variable(target)
+            prediction = data_parallel(model, input)
             loss_output = loss(prediction, target)
 
             if isinstance(loss_output, tuple):
