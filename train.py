@@ -26,7 +26,7 @@ model_names = sorted(name for name in models.__dict__
 
 parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
 parser.add_argument('data', metavar='DIR', help='path to dataset')
-parser.add_argument('save-path', help='path to save model')
+parser.add_argument('save_path', help='path to save model')
 parser.add_argument('-a', '--arch', metavar='ARCH', default='alexnet',
                     choices=model_names,
                     help='model architecture: ' +
