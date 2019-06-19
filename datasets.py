@@ -211,7 +211,6 @@ class InMemoryImageNet(Dataset):
         self.samples = []
         f = open(self.path, "rb")
         for i, sample in enumerate(msgpack.Unpacker(f, use_list=False, raw=True)):
-            # self.samples.append(sample)
             x, label = sample
             x = pickle.loads(x)
             self.samples.append((x, label))

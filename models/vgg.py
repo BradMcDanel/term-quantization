@@ -2,23 +2,24 @@
 import torch
 import torch.nn as nn
 
+import sys 
+sys.path.append('..')
+
 from cgm import CGM
 
-
-cfg = {
+_cfg = {
     'VGG11': [64, 128, 256, 256, 'M', 512, 512, 'M', 512, 512], 
     'VGG13': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
     'VGG16': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
     'VGG19': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
 }
 
-
 class VGG(nn.Module):
     def __init__(self, vgg_name, act='relu', group_size=1):
         super(VGG, self).__init__()
         self.group_size = group_size
         self.act = act
-        self.features = self._make_layers(cfg[vgg_name])
+        self.features = self._make_layers(_cfg[vgg_name])
         self.classifier = nn.Linear(512, 10)
 
     def forward(self, x):
