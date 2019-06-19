@@ -387,7 +387,7 @@ def validate(val_loader, model, criterion, args):
     losses = AverageMeter('Loss', ':.4e')
     top1 = AverageMeter('Acc@1', ':6.2f')
     top5 = AverageMeter('Acc@5', ':6.2f')
-    progress = ProgressMeter(len(val_loader), batch_time, losses, top1, top5,
+    progress = ProgressMeter(len(val_loader), [batch_time, losses, top1, top5],
                              prefix='Test: ')
 
     # switch to evaluate mode
