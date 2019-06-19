@@ -57,7 +57,7 @@ parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
 parser.add_argument('--pretrained', dest='pretrained', action='store_true',
                     help='use pre-trained model')
-parser.add_argument('--msgpack-loader', dest='msgpack-loader', action='store_true',
+parser.add_argument('--msgpack-loader', dest='msgpack_loader', action='store_true',
                     help='use custom msgpack dataloader')
 parser.add_argument('--world-size', default=-1, type=int,
                     help='number of nodes for distributed training')
@@ -196,7 +196,7 @@ def main_worker(gpu, ngpus_per_node, args):
 
     ### begin custom data loader
     # using custom msgpack data loader due to slow disk, replace with standard
-    # pytorch ImageFolder loader for equivalent results (commented below)
+    # pytorch ImageFolder loader for equivalent results (shown below in else)
     if args.msgpack_loader:
         def msgpack_load(x):
             with warnings.catch_warnings():
