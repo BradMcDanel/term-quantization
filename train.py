@@ -13,6 +13,7 @@ import torch.distributed as dist
 import torch.optim
 import torch.multiprocessing as mp
 import torch.utils.data
+from torch.utils.data.dataset import Dataset
 import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
