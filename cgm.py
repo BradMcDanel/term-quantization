@@ -19,21 +19,24 @@ class CGM(nn.Module):
 class cgm(torch.autograd.Function):
     @staticmethod
     def forward(ctx, x, group_size):
-        ctx.save_for_backward(x)
         if x.is_cuda:
-            return cgm_cuda.forward(x, group_size)
+            h = cgm_cuda.forward(x, group_size)
         else:
             B, C, W, H = x.shape
             x = x.permute(2, 3, 0, 1).contiguous().view(-1, group_size)
             x[x != x.max(dim=1, keepdim=True)[0]] = 0
-            return x.view(W, H, B, C).permute(2, 3, 0, 1).contiguous()
+            h = x.view(W, H, B, C).permute(2, 3, 0, 1).contiguous()
+
+        ctx.save_for_backward(h)
+        return h
 
     @staticmethod
     def backward(ctx, grad_output):
-        x, = ctx.saved_tensors
+        h, = ctx.saved_tensors
+        print(h)
         if grad_output.is_cuda:
-            grad_output = cgm_cuda.backward(grad_output, x)
+            grad_output = cgm_cuda.backward(grad_output, h)
         else:
-            grad_output[x<0] = 0
+            grad_output[h<0] = 0
 
         return grad_output, None
