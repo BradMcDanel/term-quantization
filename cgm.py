@@ -33,7 +33,6 @@ class cgm(torch.autograd.Function):
     @staticmethod
     def backward(ctx, grad_output):
         h, = ctx.saved_tensors
-        print(h)
         if grad_output.is_cuda:
             grad_output = cgm_cuda.backward(grad_output, h)
         else:
