@@ -20,6 +20,10 @@ import torch.utils.data.distributed
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from torchvision.utils import make_grid, save_image
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+import pickle
 
 import models
 import cgm
@@ -224,14 +228,20 @@ if __name__=='__main__':
         def forward(self, x):
             if self.data is None:
                 self.data = torch.zeros(x.size()[1:]).cuda(0)
+                self.zeros = torch.zeros(x.size()[1:]).cuda(0)
                 self.x = torch.zeros(x.size()).cuda(0)
             self.x = x
             self.data += x.sum(0)
             self.count += x.size(0)
+            self.zeros += (x == 0).float().sum(0)
             return x
         
         def avg_data(self):
             return self.data / self.count
+        
+        def channel_zeros(self):
+            C, W, H = self.zeros.shape
+            return self.zeros.sum((1, 2)) / float(W*H*self.count)
 
 
     layers = []
@@ -247,3 +257,14 @@ if __name__=='__main__':
 
     save_image(make_grid(model.features[3].x[0].view(64, 1, 55, 55)), '{}-1.png'.format(args.arch))
 
+    zeros = []
+    for i, l in enumerate(model.features):
+        if type(l) == AverageTracker:
+            z = l.channel_zeros()
+            zeros.append(torch.sort(z)[0].tolist())
+            #plt.plot(torch.sort(z)[0].tolist(), '-o', linewidth=2)
+            #plt.savefig('{}-{}-zeros.png'.format(args.arch, i))
+            #plt.clf()
+
+    with open('{}.pkl'.format(args.arch), 'wb') as f:
+        pickle.dump(zeros, f)
