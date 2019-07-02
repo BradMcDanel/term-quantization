@@ -261,7 +261,7 @@ if __name__=='__main__':
     for i, l in enumerate(model.features):
         if type(l) == AverageTracker:
             z = l.channel_zeros()
-            zeros.append(torch.sort(z)[0].tolist())
+            zeros.append(z.tolist())
             #plt.plot(torch.sort(z)[0].tolist(), '-o', linewidth=2)
             #plt.savefig('{}-{}-zeros.png'.format(args.arch, i))
             #plt.clf()
