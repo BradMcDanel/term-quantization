@@ -29,17 +29,19 @@ __global__ void cgm_cuda_forward_kernel(
 
   if (c < (C / group_size)) {
     gidx = c*group_size*WH + base_offset;
-    int32_t group_max_idx = 0;
-    scalar_t group_max_val = input[gidx];
-    for (int i = 1; i < group_size; ++i) {
+    int32_t group_max_idx = -1;
+    scalar_t group_max_val = 0;
+    for (int i = 0; i < group_size; ++i) {
       gidx = (c*group_size + i)*WH + base_offset;
       if (input[gidx] > group_max_val) {
         group_max_idx = i;
         group_max_val = input[gidx];
       }
     }
-    gidx = (c*group_size + group_max_idx)*WH + base_offset;
-    output[gidx] = group_max_val;
+    if (group_max_idx != -1) {
+      gidx = (c*group_size + group_max_idx)*WH + base_offset;
+      output[gidx] = group_max_val;
+    }
   }
 }
 

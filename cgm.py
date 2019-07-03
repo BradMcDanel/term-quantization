@@ -23,9 +23,10 @@ class cgm(torch.autograd.Function):
             h = cgm_cuda.forward(x, group_size)
         else:
             B, C, W, H = x.shape
-            x = x.permute(2, 3, 0, 1).contiguous().view(-1, group_size)
-            x[x != x.max(dim=1, keepdim=True)[0]] = 0
-            h = x.view(W, H, B, C).permute(2, 3, 0, 1).contiguous()
+            h = x.permute(2, 3, 0, 1).contiguous().view(-1, group_size)
+            h[h != h.max(dim=1, keepdim=True)[0]] = 0
+            h[h < 0] = 0
+            h = h.view(W, H, B, C).permute(2, 3, 0, 1).contiguous()
 
         ctx.save_for_backward(h)
         return h
@@ -36,6 +37,6 @@ class cgm(torch.autograd.Function):
         if grad_output.is_cuda:
             grad_output = cgm_cuda.backward(grad_output, h)
         else:
-            grad_output[h<0] = 0
+            grad_output[h <= 0] = 0
 
         return grad_output, None
