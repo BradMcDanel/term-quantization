@@ -40,3 +40,14 @@ class cgm(torch.autograd.Function):
             grad_output[h <= 0] = 0
 
         return grad_output, None
+
+if __name__=='__main__':
+    from torch.autograd import Variable
+    import gradcheck
+    x = Variable(torch.Tensor(2, 8, 16, 16).uniform_(-1, 1).double().cuda())
+    x.requires_grad = True
+
+    for i in range(1, 9):
+        layer = CGM(i).cuda()
+        res = gradcheck.gradcheck(layer, x)
+        print('CGM({}): {}'.format(i, res))
