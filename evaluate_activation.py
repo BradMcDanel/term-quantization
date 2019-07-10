@@ -5,6 +5,7 @@ import shutil
 import time
 import warnings
 from collections import OrderedDict
+import pickle
 
 import numpy as np
 import torch
@@ -21,12 +22,25 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from torchvision.utils import make_grid, save_image
 import matplotlib
-matplotlib.use('Agg')
+# matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-import pickle
+SMALL_SIZE = 13
+MEDIUM_SIZE = 17
+BIGGER_SIZE = 20
+matplotlib.rcParams["pdf.fonttype"] = 42
+matplotlib.rcParams["ps.fonttype"] = 42
+
+plt.rc("font", size=SMALL_SIZE)  # controls default text sizes
+plt.rc("axes", titlesize=BIGGER_SIZE)  # fontsize of the axes title
+plt.rc("axes", labelsize=MEDIUM_SIZE)  # fontsize of the x and y labels
+plt.rc("xtick", labelsize=SMALL_SIZE)  # fontsize of the tick labels
+plt.rc("ytick", labelsize=SMALL_SIZE)  # fontsize of the tick labels
+plt.rc("legend", fontsize=SMALL_SIZE)  # legend fontsize
+plt.rc('axes', titlesize=BIGGER_SIZE)  # fontsize of the figure title
 
 import models
 import cgm
+import numpy as np
 
 def validate(val_loader, model, args):
     # switch to evaluate mode
@@ -38,6 +52,73 @@ def validate(val_loader, model, args):
             images = images.cuda(0, non_blocking=True)
             target = target.cuda(0, non_blocking=True)
             output = model(images)
+
+def rle(inarray):
+    """ run length encoding. Partial credit to R rle function. 
+        Multi datatype arrays catered for including non Numpy
+        returns: tuple (runlengths, startpositions, values) """
+    ia = np.asarray(inarray)                  # force numpy
+    n = len(ia)
+    if n == 0: 
+        return (None, None, None)
+    else:
+        y = np.array(ia[1:] != ia[:-1])     # pairwise unequal (string safe)
+        i = np.append(np.where(y), n - 1)   # must include last element posi
+        z = np.diff(np.append(-1, i))       # run lengths
+        p = np.cumsum(np.append(0, z))[:-1] # positions
+        return(z, p, ia[i])
+
+class AverageTracker(nn.Module):
+    def __init__(self):
+        super(AverageTracker, self).__init__()
+        self.count = 0
+        self.register_buffer('data', None)
+        self.register_buffer('x', None)
+
+    def forward(self, x):
+        if self.data is None:
+            self.data = torch.zeros(x.size()[1:]).cuda(0)
+            self.zeros = torch.zeros(x.size()[1:]).cuda(0)
+            self.x = torch.zeros(x.size()).cuda(0)
+        self.x = x
+        self.data += x.sum(0)
+        self.count += x.size(0)
+        self.zeros += (x == 0).float().sum(0)
+        return x
+    
+    def avg_data(self):
+        return self.data / self.count
+    
+    def channel_zeros(self):
+        C, W, H = self.zeros.shape
+        return self.zeros.sum((1, 2)) / float(W*H*self.count)
+
+def get_conflict_score(conflict_mat, columns):
+    from itertools import combinations 
+    conflict_score = 0.0
+    for i, j in combinations(columns, 2):
+        conflict_score += conflict_mat[i][j].item()
+    return conflict_score
+
+def first_fit(conflict_mat, max_conflict_score=0.01, max_columns=8):
+    bins = []
+    for column in range(len(conflict_mat)):
+        for bin_elems in bins:
+            # cannot add to column as reached max multiplexing size
+            if len(bin_elems) == max_columns:
+                continue
+            potential_bin = bin_elems + [column]
+            conflict_score = get_conflict_score(conflict_mat, potential_bin)
+            # valid bin found, add column to bin then break
+            if conflict_score < max_conflict_score:
+                bin_elems.append(column)
+                break
+        # no valid bin found, so create new bin
+        else:
+            bins.append([column])
+    return bins
+
+
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -164,11 +245,24 @@ if __name__=='__main__':
 
         train_path = os.path.join(args.data, 'imagenet-msgpack', 'ILSVRC-train.bin')
         val_path = os.path.join(args.data, 'imagenet-msgpack', 'ILSVRC-val.bin')
-        num_train = 1281167
-        num_val = 50000
+        num_train = 1024 # just a small number for this test
+        num_val = 1024 # just a small number for this test
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                         std=[0.229, 0.224, 0.225])
-        train_dataset, train_loader = None, None
+        train_dataset = InMemoryImageNet(train_path, num_val,
+                                transforms=transforms.Compose([
+                                    msgpack_load,
+                                    transforms.Resize(256),
+                                    transforms.CenterCrop(224),
+                                    transforms.ToTensor(),
+                                    normalize,
+                                ]))
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size,
+                                                   shuffle=False, drop_last=False,
+                                                   num_workers=args.workers)
+        train_loader.num_samples = num_train
+ 
+
         val_dataset = InMemoryImageNet(val_path, num_val,
                                 transforms=transforms.Compose([
                                     msgpack_load,
@@ -218,32 +312,6 @@ if __name__=='__main__':
             batch_size=args.batch_size, shuffle=False,
             num_workers=args.workers, pin_memory=True)
 
-    class AverageTracker(nn.Module):
-        def __init__(self):
-            super(AverageTracker, self).__init__()
-            self.count = 0
-            self.register_buffer('data', None)
-            self.register_buffer('x', None)
-
-        def forward(self, x):
-            if self.data is None:
-                self.data = torch.zeros(x.size()[1:]).cuda(0)
-                self.zeros = torch.zeros(x.size()[1:]).cuda(0)
-                self.x = torch.zeros(x.size()).cuda(0)
-            self.x = x
-            self.data += x.sum(0)
-            self.count += x.size(0)
-            self.zeros += (x == 0).float().sum(0)
-            return x
-        
-        def avg_data(self):
-            return self.data / self.count
-        
-        def channel_zeros(self):
-            C, W, H = self.zeros.shape
-            return self.zeros.sum((1, 2)) / float(W*H*self.count)
-
-
     layers = []
     for l in model.features:
         if type(l) == cgm.CGM or type(l) == nn.ReLU:
@@ -253,18 +321,83 @@ if __name__=='__main__':
 
     model.features = nn.Sequential(*layers)
     model.cuda(0)
+    validate(train_loader, model, args)
+
+    assert False
     validate(val_loader, model, args)
 
-    save_image(make_grid(model.features[3].x[0].view(64, 1, 55, 55)), '{}-1.png'.format(args.arch))
+    assert False
 
-    zeros = []
-    for i, l in enumerate(model.features):
-        if type(l) == AverageTracker:
-            z = l.channel_zeros()
-            zeros.append(z.tolist())
-            #plt.plot(torch.sort(z)[0].tolist(), '-o', linewidth=2)
-            #plt.savefig('{}-{}-zeros.png'.format(args.arch, i))
-            #plt.clf()
+    layer_bin_data = []
+    conflict_scores = np.linspace(0.0, 1.0, 50)
+    for k, (lidx, size) in enumerate([(3, 64), (8, 192), (13, 384), (17, 256), (21, 256)]):
+        img = model.features[lidx].x[0]
+        img = img[:64]
+        C, W, H = img.shape
+        save_image(make_grid(img.view(C, 1, W, H)), 'figures/img-{}-{}.png'.format(args.arch, k+1))
+        # invert so 0's == 1 and everything else == 0
+        zero_runs = model.features[lidx].x.permute(1,0,2,3).contiguous().view(size, -1)
+        zero_runs[zero_runs != 0] = 2
+        zero_runs[zero_runs == 0] = 1
+        zero_runs[zero_runs == 2] = 0
 
-    with open('{}.pkl'.format(args.arch), 'wb') as f:
-        pickle.dump(zeros, f)
+        data = []
+        for i in range(20):
+            run_length, _, vals = rle(zero_runs[i].cpu().numpy())
+            run_length = run_length[vals==1]  # only interested in zero runs for now
+            if np.mean(run_length) < 200:
+                data.append(run_length.tolist())
+
+        plt.boxplot(data, showfliers=False)
+        plt.title('AlexNet Layer {}'.format(k+1))
+        plt.xlabel('Channel Index')
+        plt.ylabel('Zero Run Length (boxplot)')
+        plt.tight_layout()
+        plt.savefig('figures/alexnet-box-{}.png'.format(k+1), dpi=300)
+        plt.clf()
+
+        data = model.features[lidx].x.clone()
+        data[data != 0] = 1
+        B, C, W, H = data.shape
+        data = data.permute(1, 0, 2, 3).contiguous().view(C, -1)
+        sim_mat = torch.mm(data, torch.transpose(data, 0, 1))
+        # remove diag 
+        sim_mat[range(len(sim_mat)), range(len(sim_mat))] = 0
+        sim_mat /= B*W*H
+
+        plt.imshow(sim_mat.tolist())
+        plt.colorbar()
+        plt.title('AlexNet Layer {}'.format(k+1))
+        plt.tight_layout()
+        plt.savefig('figures/sim-mat-{}'.format(k+1), dpi=300)
+        plt.clf()
+        
+        total_bins = []
+        for conflict_score in conflict_scores:
+            print('Processing.. {}'.format(conflict_score))
+            bins = first_fit(sim_mat, conflict_score)
+            total_bins.append(len(bins))
+        layer_bin_data.append(total_bins)
+
+    for lidx, total_bins in enumerate(layer_bin_data):
+        plt.plot(conflict_scores, total_bins, label='Layer {}'.format(lidx))
+
+    plt.xlabel('Max Conflict Score')
+    plt.ylabel('Number of Data Channels')
+    plt.legend(loc=0)
+    plt.xlim((-0.05, 1.05))
+    plt.tight_layout()
+    plt.savefig('figures/first_fit_conflicts.png', dpi=300)
+
+
+    # zeros = []
+    # for i, l in enumerate(model.features):
+    #     if type(l) == AverageTracker:
+    #         z = l.channel_zeros()
+    #         zeros.append(z.tolist())
+    #         #plt.plot(torch.sort(z)[0].tolist(), '-o', linewidth=2)
+    #         #plt.savefig('{}-{}-zeros.png'.format(args.arch, i))
+    #         #plt.clf()
+
+    # with open('{}.pkl'.format(args.arch), 'wb') as f:
+    #     pickle.dump(zeros, f)
