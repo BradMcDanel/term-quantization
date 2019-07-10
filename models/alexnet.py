@@ -65,13 +65,13 @@ class AlexNetCGM(nn.Module):
             nn.MaxPool2d(kernel_size=3, stride=2),
             nn.Conv2d(192, 384, kernel_size=3, padding=1),
             nn.BatchNorm2d(384),
-            CGM(2),
+            CGM(3),
             nn.Conv2d(384, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
-            CGM(3),
+            CGM(4),
             nn.Conv2d(256, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
-            CGM(3),
+            CGM(5),
             nn.MaxPool2d(kernel_size=3, stride=2),
         )
         self.avgpool = nn.AdaptiveAvgPool2d((6, 6))
