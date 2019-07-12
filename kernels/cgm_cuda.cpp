@@ -6,7 +6,8 @@
 
 at::Tensor cgm_cuda_forward(
     const at::Tensor input,
-    const int32_t group_size);
+    const int32_t group_size, 
+    const float max_clamp);
 
 at::Tensor cgm_cuda_backward(
     at::Tensor grad_input,
@@ -21,10 +22,11 @@ at::Tensor cgm_cuda_backward(
 
 at::Tensor cgm_forward(
     const at::Tensor input,
-    const int32_t group_size) {
+    const int32_t group_size,
+    const float max_clamp) {
   CHECK_INPUT(input);
 
-  return cgm_cuda_forward(input, group_size);
+  return cgm_cuda_forward(input, group_size, max_clamp);
 }
 
 at::Tensor cgm_backward(

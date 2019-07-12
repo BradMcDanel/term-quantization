@@ -42,16 +42,48 @@ import models
 import cgm
 import numpy as np
 
-def validate(val_loader, model, args):
+
+def evaluate(loader, model, args, name):
     # switch to evaluate mode
     model.eval()
-
+    average_trackers = get_average_trackers(model)
+    conflict_mats = []
+    data_shapes = []
+    num_samples = 0
     with torch.no_grad():
-        end = time.time()
-        for i, (images, target) in enumerate(val_loader):
+        for i, (images, target) in enumerate(loader):
+            if i == 0:
+                save_image(make_grid(images), 'figures/{}.png'.format(name))
+            num_samples += len(target)
             images = images.cuda(0, non_blocking=True)
             target = target.cuda(0, non_blocking=True)
-            output = model(images)
+            _ = model(images)
+            for k, tracker in enumerate(average_trackers):
+                data = tracker.x.clone()
+                data[data != 0] = 1
+
+                # only care about conv layers for now
+                if len(data.shape) < 4:
+                    continue
+
+                _, C, W, H = data.shape
+                data = data.permute(1, 0, 2, 3).contiguous().view(C, -1)
+                # first batch -- generate conflict mat
+                if i == 0:
+                    data_shapes.append((C, W, H))
+                    conflict_mat = torch.mm(data, torch.transpose(data, 0, 1))
+                    conflict_mats.append(conflict_mat)
+                else:
+                    conflict_mats[k] += torch.mm(data, torch.transpose(data, 0, 1))
+
+    for i, conflict_mat in enumerate(conflict_mats):
+        # remove diag 
+        C, W, H = data_shapes[i]
+        conflict_mat[range(len(conflict_mat)), range(len(conflict_mat))] = 0
+        conflict_mat /= num_samples*W*H
+    
+    return conflict_mats
+
 
 def rle(inarray):
     """ run length encoding. Partial credit to R rle function. 
@@ -92,6 +124,24 @@ class AverageTracker(nn.Module):
     def channel_zeros(self):
         C, W, H = self.zeros.shape
         return self.zeros.sum((1, 2)) / float(W*H*self.count)
+
+def add_average_trackers(model):
+    for child_name, child in model.named_children():
+        if isinstance(child, nn.ReLU):
+            setattr(model, child_name, nn.Sequential(nn.ReLU(), AverageTracker()))
+        else:
+            add_average_trackers(child)
+
+def get_average_trackers(model):
+    average_trackers = []
+    for child in model.children():
+        if isinstance(child, AverageTracker):
+            average_trackers.append(child)
+        else:
+            trackers = get_average_trackers(child)
+            average_trackers.extend(trackers)
+    
+    return average_trackers
 
 def get_conflict_score(conflict_mat, columns):
     from itertools import combinations 
@@ -190,11 +240,14 @@ if __name__=='__main__':
     if os.path.isfile(args.resume):
         print("=> loading checkpoint '{}'".format(args.resume))
         checkpoint = torch.load(args.resume)
-        state_dict = dict(checkpoint['state_dict'])
-        for key in state_dict.keys():
-            if '.module' in key:
-                new_key = key.replace('.module', '')
-                state_dict[new_key] = state_dict.pop(key)
+        tmp_state_dict = dict(checkpoint['state_dict'])
+        state_dict = {}
+        for key in tmp_state_dict.keys():
+            if 'module.' in key:
+                new_key = key.replace('module.', '')
+            else:
+                new_key = key
+            state_dict[new_key] = tmp_state_dict[key]
         state_dict = OrderedDict(state_dict)
         model.load_state_dict(state_dict)
         print("=> loaded checkpoint '{}' (epoch {})"
@@ -243,13 +296,13 @@ if __name__=='__main__':
             def __len__(self):
                 return self.num_samples
 
-        train_path = os.path.join(args.data, 'imagenet-msgpack', 'ILSVRC-train.bin')
+        train_path = os.path.join(args.data, 'imagenet-msgpack', 'ILSVRC-train-chunk.bin')
         val_path = os.path.join(args.data, 'imagenet-msgpack', 'ILSVRC-val.bin')
-        num_train = 1024 # just a small number for this test
-        num_val = 1024 # just a small number for this test
+        num_train = 800 # just a small number for this test
+        num_val = 800 # just a small number for this test
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                         std=[0.229, 0.224, 0.225])
-        train_dataset = InMemoryImageNet(train_path, num_val,
+        train_dataset = InMemoryImageNet(train_path, num_train,
                                 transforms=transforms.Compose([
                                     msgpack_load,
                                     transforms.Resize(256),
@@ -312,85 +365,46 @@ if __name__=='__main__':
             batch_size=args.batch_size, shuffle=False,
             num_workers=args.workers, pin_memory=True)
 
-    layers = []
-    for l in model.features:
-        if type(l) == cgm.CGM or type(l) == nn.ReLU:
-            layers.extend([l, AverageTracker()])
-        else:
-            layers.append(l)
-
-    model.features = nn.Sequential(*layers)
+    add_average_trackers(model)
     model.cuda(0)
-    validate(train_loader, model, args)
+    train_conflicts = evaluate(train_loader, model, args, 'train')
+    val_conflicts = evaluate(val_loader, model, args, 'test')
 
-    assert False
-    validate(val_loader, model, args)
 
-    assert False
-
-    layer_bin_data = []
     conflict_scores = np.linspace(0.0, 1.0, 50)
-    for k, (lidx, size) in enumerate([(3, 64), (8, 192), (13, 384), (17, 256), (21, 256)]):
-        img = model.features[lidx].x[0]
-        img = img[:64]
-        C, W, H = img.shape
-        save_image(make_grid(img.view(C, 1, W, H)), 'figures/img-{}-{}.png'.format(args.arch, k+1))
-        # invert so 0's == 1 and everything else == 0
-        zero_runs = model.features[lidx].x.permute(1,0,2,3).contiguous().view(size, -1)
-        zero_runs[zero_runs != 0] = 2
-        zero_runs[zero_runs == 0] = 1
-        zero_runs[zero_runs == 2] = 0
+    for k in range(len(train_conflicts)):
+        tc, vc = train_conflicts[k], val_conflicts[k]
+        cc = np.corrcoef(tc.view(-1).cpu().numpy(), vc.view(-1).cpu().numpy())
+        print('Correlation: {}'.format(cc))
+        fig, axes = plt.subplots(nrows=1, ncols=2)
+        im = axes[0].imshow(tc.tolist(), vmin=0, vmax=1)
+        im = axes[1].imshow(vc.tolist(), vmin=0, vmax=1)
 
-        data = []
-        for i in range(20):
-            run_length, _, vals = rle(zero_runs[i].cpu().numpy())
-            run_length = run_length[vals==1]  # only interested in zero runs for now
-            if np.mean(run_length) < 200:
-                data.append(run_length.tolist())
-
-        plt.boxplot(data, showfliers=False)
-        plt.title('AlexNet Layer {}'.format(k+1))
-        plt.xlabel('Channel Index')
-        plt.ylabel('Zero Run Length (boxplot)')
-        plt.tight_layout()
-        plt.savefig('figures/alexnet-box-{}.png'.format(k+1), dpi=300)
-        plt.clf()
-
-        data = model.features[lidx].x.clone()
-        data[data != 0] = 1
-        B, C, W, H = data.shape
-        data = data.permute(1, 0, 2, 3).contiguous().view(C, -1)
-        sim_mat = torch.mm(data, torch.transpose(data, 0, 1))
-        # remove diag 
-        sim_mat[range(len(sim_mat)), range(len(sim_mat))] = 0
-        sim_mat /= B*W*H
-
-        plt.imshow(sim_mat.tolist())
-        plt.colorbar()
-        plt.title('AlexNet Layer {}'.format(k+1))
-        plt.tight_layout()
-        plt.savefig('figures/sim-mat-{}'.format(k+1), dpi=300)
+        fig.subplots_adjust(right=0.8)
+        cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
+        fig.colorbar(im, cax=cbar_ax)
+        plt.savefig('figures/{}-val-sim-{}'.format(args.arch, k+1), dpi=300)
         plt.clf()
         
-        total_bins = []
-        for conflict_score in conflict_scores:
-            print('Processing.. {}'.format(conflict_score))
-            bins = first_fit(sim_mat, conflict_score)
-            total_bins.append(len(bins))
-        layer_bin_data.append(total_bins)
+    #     total_bins = []
+    #     for conflict_score in conflict_scores:
+    #         print('Processing.. {}'.format(conflict_score))
+    #         bins = first_fit(tc, conflict_score)
+    #         total_bins.append(len(bins))
+    #     layer_bin_data.append(total_bins)
 
-    for lidx, total_bins in enumerate(layer_bin_data):
-        plt.plot(conflict_scores, total_bins, label='Layer {}'.format(lidx))
+    # for lidx, total_bins in enumerate(layer_bin_data):
+    #     plt.plot(conflict_scores, total_bins, label='Layer {}'.format(lidx))
 
-    plt.xlabel('Max Conflict Score')
-    plt.ylabel('Number of Data Channels')
-    plt.legend(loc=0)
-    plt.xlim((-0.05, 1.05))
-    plt.tight_layout()
-    plt.savefig('figures/first_fit_conflicts.png', dpi=300)
+    # plt.xlabel('Max Conflict Score')
+    # plt.ylabel('Number of Data Channels')
+    # plt.legend(loc=0)
+    # plt.xlim((-0.05, 1.05))
+    # plt.tight_layout()
+    # plt.savefig('figures/first_fit_conflicts.png', dpi=300)
 
 
-    # zeros = []
+    # # zeros = []
     # for i, l in enumerate(model.features):
     #     if type(l) == AverageTracker:
     #         z = l.channel_zeros()

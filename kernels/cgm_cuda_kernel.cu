@@ -12,6 +12,7 @@ __global__ void cgm_cuda_forward_kernel(
     const scalar_t* __restrict__ input,
     scalar_t* __restrict__ output,
     const int32_t group_size,
+    const float max_clamp,
     const int32_t B,
     const int32_t C,
     const int32_t W,
@@ -37,6 +38,11 @@ __global__ void cgm_cuda_forward_kernel(
         group_max_idx = i;
         group_max_val = input[gidx];
       }
+
+      // keep values larger than max_clamp
+      if (input[gidx] > max_clamp) {
+        output[gidx] = input[gidx];
+      }
     }
     if (group_max_idx != -1) {
       gidx = (c*group_size + group_max_idx)*WH + base_offset;
@@ -57,7 +63,8 @@ __global__ void cgm_cuda_backward_kernel(
 
 at::Tensor cgm_cuda_forward(
     const at::Tensor input,
-    const int32_t group_size) {
+    const int32_t group_size,
+    const float max_clamp) {
   const auto ndim = input.ndimension();
   const auto B = input.size(0);
   const auto C = input.size(1);
@@ -77,6 +84,7 @@ at::Tensor cgm_cuda_forward(
         input.data<scalar_t>(),
         output.data<scalar_t>(),
         group_size,
+        max_clamp,
         B,
         C,
         W,

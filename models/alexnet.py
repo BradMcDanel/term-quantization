@@ -6,7 +6,7 @@ sys.path.append('..')
 
 from cgm import CGM
 
-__all__ = ['AlexNet', 'AlexNetCGM', 'AlexNetCGM2', 'AlexNetCGM1', 'alexnet', 'alexnet_cgm', 'alexnet_cgm2', 'alexnet_cgm1']
+__all__ = ['AlexNet', 'AlexNetCGM', 'AlexNetCGM2', 'AlexNetCGMClamp', 'alexnet', 'alexnet_cgm', 'alexnet_cgm2', 'alexnet_cgm_clamp']
 
 class AlexNet(nn.Module):
     def __init__(self, in_channels=3, num_classes=1000):
@@ -137,27 +137,27 @@ class AlexNetCGM2(nn.Module):
         x = self.classifier(x)
         return x
 
-class AlexNetCGM1(nn.Module):
+class AlexNetCGMClamp(nn.Module):
     def __init__(self, in_channels=3, num_classes=1000):
-        super(AlexNetCGM1, self).__init__()
+        super(AlexNetCGMClamp, self).__init__()
         self.features = nn.Sequential(
             nn.Conv2d(in_channels, 64, kernel_size=11, stride=4, padding=2),
             nn.BatchNorm2d(64),
-            CGM(1),
+            CGM(2, max_clamp=0.8),
             nn.MaxPool2d(kernel_size=3, stride=2),
             nn.Conv2d(64, 192, kernel_size=5, padding=2),
             nn.BatchNorm2d(192),
-            CGM(1),
+            CGM(2, max_clamp=0.4),
             nn.MaxPool2d(kernel_size=3, stride=2),
             nn.Conv2d(192, 384, kernel_size=3, padding=1),
             nn.BatchNorm2d(384),
-            CGM(1),
+            CGM(3, max_clamp=0.3),
             nn.Conv2d(384, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
-            CGM(1),
+            CGM(4, max_clamp=0.3),
             nn.Conv2d(256, 256, kernel_size=3, padding=1),
             nn.BatchNorm2d(256),
-            CGM(1),
+            CGM(5, max_clamp=0.3),
             nn.MaxPool2d(kernel_size=3, stride=2),
         )
         self.avgpool = nn.AdaptiveAvgPool2d((6, 6))
@@ -180,8 +180,6 @@ class AlexNetCGM1(nn.Module):
         x = self.classifier(x)
         return x
 
-
-
 def alexnet(pretrained=False):
     return AlexNet()
 
@@ -191,5 +189,5 @@ def alexnet_cgm(pretrained=False):
 def alexnet_cgm2(pretrained=False):
     return AlexNetCGM2()
 
-def alexnet_cgm1(pretrained=False):
-    return AlexNetCGM1()
+def alexnet_cgm_clamp(pretrained=False):
+    return AlexNetCGMClamp()
