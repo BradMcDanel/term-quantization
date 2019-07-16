@@ -127,8 +127,8 @@ class AverageTracker(nn.Module):
 
 def add_average_trackers(model):
     for child_name, child in model.named_children():
-        if isinstance(child, nn.ReLU) or isinstance(child, cgm.CGM):
-            setattr(model, child_name, nn.Sequential(child, AverageTracker()))
+        if isinstance(child, nn.ReLU):
+            setattr(model, child_name, nn.Sequential(nn.ReLU(), AverageTracker()))
         else:
             add_average_trackers(child)
 
@@ -298,8 +298,8 @@ if __name__=='__main__':
 
         train_path = os.path.join(args.data, 'imagenet-msgpack', 'ILSVRC-train-chunk.bin')
         val_path = os.path.join(args.data, 'imagenet-msgpack', 'ILSVRC-val.bin')
-        num_train = 800 # just a small number for this test
-        num_val = 800 # just a small number for this test
+        num_train = 64 # just a small number for this test
+        num_val = 64 # just a small number for this test
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                         std=[0.229, 0.224, 0.225])
         train_dataset = InMemoryImageNet(train_path, num_train,
@@ -367,75 +367,32 @@ if __name__=='__main__':
 
     add_average_trackers(model)
     model.cuda(0)
-    train_conflicts = evaluate(train_loader, model, args, 'train')
-    val_conflicts = evaluate(val_loader, model, args, 'test')
+    train_conflicts = evaluate(val_loader, model, args, 'train')
+    trackers = get_average_trackers(model)
+    sample = trackers[0].x[0]
+    #sample /= sample.max()
+    sample_bin = sample.clone()
+    sample_bin[sample_bin!=0] = 1
+    C, W, H = sample_bin.shape
+    sample_bin = sample_bin.view(C, W*H)
+    conflict_mat = torch.mm(sample_bin, torch.transpose(sample_bin, 0, 1))
+    conflict_mat = conflict_mat.data.cpu().numpy()
+    sorted_idxs = np.argsort(conflict_mat.flatten())
 
-
-    # fix hardcode
-    alexnet_cgm_conflicts = []
-    cgms = [2,2,3,4,5]
-    for i in range(len(train_conflicts)):
-        columns = first_fit(train_conflicts[i], max_conflict_score=0.4, max_columns=cgms[i])
-        conflict_scores = []
-        for col in columns:
-            conflict_scores.append(100.*get_conflict_score(train_conflicts[i], col))
-
-        alexnet_cgm_conflicts.append(conflict_scores)
-        # plt.bar(np.arange(len(conflict_scores)), conflict_scores)
-        # plt.xlabel('Multiplexed-Column Index')
-        # plt.ylabel('Conflict (%)')
-        # plt.show()
-
-    for i in range(5):
-        plt.plot(alexnet_conflicts[i], linewidth=2, label='AlexNet (pretrained)')
-        plt.plot(alexnet_cgm_conflicts[i], linewidth=2, label='AlexNet (trained with CGM)')
-        plt.xlabel('Multiplexed Column Index')
-        plt.ylabel('Conflict (%)')
-        # plt.legend(loc=0)
-        plt.savefig('figures/conflict-comp-{}.png'.format(i+1), dpi=300)
+    for i, idx in enumerate(sorted_idxs):
+        # handpicked example to showcase intuition
+        # if i != 181:
+        if i > 100:
+            continue
+        row = idx // C
+        col = idx % C
+        fig, axes = plt.subplots(nrows=2, ncols=1)
+        im = axes[0].imshow(sample[row].data.cpu().numpy())
+        im = axes[1].imshow(sample[col].data.cpu().numpy())
+        for j in range(2):
+            axes[j].grid(False)
+            axes[j].set_xticks([])
+            axes[j].set_yticks([])
+        plt.tight_layout()
+        plt.savefig('figures/multiplexing-example-{}.png'.format(i), dpi=600)
         plt.clf()
-
-    # conflict_scores = np.linspace(0.0, 1.0, 50)
-    # for k in range(len(train_conflicts)):
-    #     tc, vc = train_conflicts[k], val_conflicts[k]
-    #     cc = np.corrcoef(tc.view(-1).cpu().numpy(), vc.view(-1).cpu().numpy())
-    #     print('Correlation: {}'.format(cc))
-    #     fig, axes = plt.subplots(nrows=1, ncols=2)
-    #     im = axes[0].imshow(tc.tolist(), vmin=0, vmax=1)
-    #     im = axes[1].imshow(vc.tolist(), vmin=0, vmax=1)
-
-    #     fig.subplots_adjust(right=0.8)
-    #     cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
-    #     fig.colorbar(im, cax=cbar_ax)
-    #     plt.savefig('figures/{}-val-sim-{}'.format(args.arch, k+1), dpi=300)
-    #     plt.clf()
-        
-    #     total_bins = []
-    #     for conflict_score in conflict_scores:
-    #         print('Processing.. {}'.format(conflict_score))
-    #         bins = first_fit(tc, conflict_score)
-    #         total_bins.append(len(bins))
-    #     layer_bin_data.append(total_bins)
-
-    # for lidx, total_bins in enumerate(layer_bin_data):
-    #     plt.plot(conflict_scores, total_bins, label='Layer {}'.format(lidx))
-
-    # plt.xlabel('Max Conflict Score')
-    # plt.ylabel('Number of Data Channels')
-    # plt.legend(loc=0)
-    # plt.xlim((-0.05, 1.05))
-    # plt.tight_layout()
-    # plt.savefig('figures/first_fit_conflicts.png', dpi=300)
-
-
-    # # zeros = []
-    # for i, l in enumerate(model.features):
-    #     if type(l) == AverageTracker:
-    #         z = l.channel_zeros()
-    #         zeros.append(z.tolist())
-    #         #plt.plot(torch.sort(z)[0].tolist(), '-o', linewidth=2)
-    #         #plt.savefig('{}-{}-zeros.png'.format(args.arch, i))
-    #         #plt.clf()
-
-    # with open('{}.pkl'.format(args.arch), 'wb') as f:
-    #     pickle.dump(zeros, f)
