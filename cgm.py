@@ -1,9 +1,32 @@
 import torch
 import torch.nn as nn
 from torch.utils.cpp_extension import load
+import torch.nn.functional as F
 
 cgm_cuda = load(
     'cgm_cuda', ['kernels/cgm_cuda.cpp', 'kernels/cgm_cuda_kernel.cu'], extra_cflags=['-O3'])
+
+class StaticCGM(nn.Module):
+    def __init__(self, columns):
+        super(StaticCGM, self).__init__()
+        self.columns = columns
+
+    def forward(self, x):
+        B, C, W, H = x.shape
+        x = x.permute(1, 0, 2, 3).contiguous().view(C, B*W*H)
+        x_out = torch.zeros_like(x)
+        for columns in self.columns:
+            xi = torch.index_select(x, 0, torch.Tensor(columns).long().cuda(0))
+            max_idx = torch.max(xi, dim=0)[1]
+            idx_rng = torch.arange(B*W*H)
+
+            for i in reversed(range(len(columns))):
+                max_idx[max_idx == i] = columns[i]
+        
+            x_out[max_idx, idx_rng] = x[max_idx, idx_rng]
+
+        x_out = x_out.view(C, B, W, H).permute(1, 0, 2, 3).contiguous()
+        return F.relu(x_out)
 
 class CGM(nn.Module):
     def __init__(self, group_size, max_clamp=1e10):

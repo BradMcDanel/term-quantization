@@ -22,7 +22,7 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from torchvision.utils import make_grid, save_image
 import matplotlib
-# matplotlib.use('Agg')
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 SMALL_SIZE = 13
 MEDIUM_SIZE = 17
@@ -42,6 +42,89 @@ import models
 import cgm
 import numpy as np
 
+def accuracy(output, target, topk=(1,)):
+    """Computes the accuracy over the k top predictions for the specified values of k"""
+    with torch.no_grad():
+        maxk = max(topk)
+        batch_size = target.size(0)
+
+        _, pred = output.topk(maxk, 1, True, True)
+        pred = pred.t()
+        correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+        res = []
+        for k in topk:
+            correct_k = correct[:k].view(-1).float().sum(0, keepdim=True)
+            res.append(correct_k.mul_(100.0 / batch_size))
+        return res
+
+
+
+class AverageMeter(object):
+    """Computes and stores the average and current value"""
+    def __init__(self, name, fmt=':f'):
+        self.name = name
+        self.fmt = fmt
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+    def __str__(self):
+        fmtstr = '{name} {val' + self.fmt + '} ({avg' + self.fmt + '})'
+        return fmtstr.format(**self.__dict__)
+
+
+
+def validate(val_loader, model, criterion):
+    batch_time = AverageMeter('Time', ':6.3f')
+    losses = AverageMeter('Loss', ':.4e')
+    top1 = AverageMeter('Acc@1', ':6.2f')
+    top5 = AverageMeter('Acc@5', ':6.2f')
+
+    # switch to evaluate mode
+    model.eval()
+
+    with torch.no_grad():
+        end = time.time()
+        for i, (images, target) in enumerate(val_loader):
+            if i % 5 == 0:
+                print('{}..'.format(i))
+            images = images.cuda(0, non_blocking=True)
+            target = target.cuda(0, non_blocking=True)
+
+            # compute output
+            output = model(images)
+            loss = criterion(output, target)
+
+            # measure accuracy and record loss
+            acc1, acc5 = accuracy(output, target, topk=(1, 5))
+            losses.update(loss.item(), images.size(0))
+            top1.update(acc1[0], images.size(0))
+            top5.update(acc5[0], images.size(0))
+
+            # measure elapsed time
+            batch_time.update(time.time() - end)
+            end = time.time()
+
+
+        # TODO: this should also be done with the ProgressMeter
+        print(' * Acc@1 {top1.avg:.3f} Acc@5 {top5.avg:.3f}'
+              .format(top1=top1, top5=top5))
+
+    return losses.avg, top1.avg
+
+
+
 
 def evaluate(loader, model, args, name):
     # switch to evaluate mode
@@ -52,8 +135,6 @@ def evaluate(loader, model, args, name):
     num_samples = 0
     with torch.no_grad():
         for i, (images, target) in enumerate(loader):
-            if i == 0:
-                save_image(make_grid(images), 'figures/{}.png'.format(name))
             num_samples += len(target)
             images = images.cuda(0, non_blocking=True)
             target = target.cuda(0, non_blocking=True)
@@ -299,7 +380,7 @@ if __name__=='__main__':
         train_path = os.path.join(args.data, 'imagenet-msgpack', 'ILSVRC-train-chunk.bin')
         val_path = os.path.join(args.data, 'imagenet-msgpack', 'ILSVRC-val.bin')
         num_train = 800 # just a small number for this test
-        num_val = 800 # just a small number for this test
+        num_val = 50000
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                         std=[0.229, 0.224, 0.225])
         train_dataset = InMemoryImageNet(train_path, num_train,
@@ -368,74 +449,27 @@ if __name__=='__main__':
     add_average_trackers(model)
     model.cuda(0)
     train_conflicts = evaluate(train_loader, model, args, 'train')
-    val_conflicts = evaluate(val_loader, model, args, 'test')
+    # val_conflicts = evaluate(val_loader, model, args, 'test')
+    criterion = nn.CrossEntropyLoss().cuda(0)
+    val_loss, val_acc = validate(val_loader, model, criterion)
+    assert False
 
 
-    # fix hardcode
-    alexnet_cgm_conflicts = []
-    cgms = [2,2,3,4,5]
+    conflicts, layer_columns = [], []
     for i in range(len(train_conflicts)):
-        columns = first_fit(train_conflicts[i], max_conflict_score=0.4, max_columns=cgms[i])
+        columns = first_fit(train_conflicts[i], max_conflict_score=0.00, max_columns=8)
+        layer_columns.append(columns)
         conflict_scores = []
         for col in columns:
             conflict_scores.append(100.*get_conflict_score(train_conflicts[i], col))
 
-        alexnet_cgm_conflicts.append(conflict_scores)
-        # plt.bar(np.arange(len(conflict_scores)), conflict_scores)
-        # plt.xlabel('Multiplexed-Column Index')
-        # plt.ylabel('Conflict (%)')
-        # plt.show()
+        conflicts.append(conflict_scores)
 
-    for i in range(5):
-        plt.plot(alexnet_conflicts[i], linewidth=2, label='AlexNet (pretrained)')
-        plt.plot(alexnet_cgm_conflicts[i], linewidth=2, label='AlexNet (trained with CGM)')
-        plt.xlabel('Multiplexed Column Index')
-        plt.ylabel('Conflict (%)')
-        # plt.legend(loc=0)
-        plt.savefig('figures/conflict-comp-{}.png'.format(i+1), dpi=300)
-        plt.clf()
+    model.features[2] = nn.Sequential(cgm.StaticCGM(layer_columns[0]), AverageTracker())
+    model.features[6] = nn.Sequential(cgm.StaticCGM(layer_columns[1]), AverageTracker())
+    model.features[10] = nn.Sequential(cgm.StaticCGM(layer_columns[2]), AverageTracker())
+    model.features[13] = nn.Sequential(cgm.StaticCGM(layer_columns[3]), AverageTracker())
+    model.features[16] = nn.Sequential(cgm.StaticCGM(layer_columns[4]), AverageTracker())
 
-    # conflict_scores = np.linspace(0.0, 1.0, 50)
-    # for k in range(len(train_conflicts)):
-    #     tc, vc = train_conflicts[k], val_conflicts[k]
-    #     cc = np.corrcoef(tc.view(-1).cpu().numpy(), vc.view(-1).cpu().numpy())
-    #     print('Correlation: {}'.format(cc))
-    #     fig, axes = plt.subplots(nrows=1, ncols=2)
-    #     im = axes[0].imshow(tc.tolist(), vmin=0, vmax=1)
-    #     im = axes[1].imshow(vc.tolist(), vmin=0, vmax=1)
-
-    #     fig.subplots_adjust(right=0.8)
-    #     cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
-    #     fig.colorbar(im, cax=cbar_ax)
-    #     plt.savefig('figures/{}-val-sim-{}'.format(args.arch, k+1), dpi=300)
-    #     plt.clf()
-        
-    #     total_bins = []
-    #     for conflict_score in conflict_scores:
-    #         print('Processing.. {}'.format(conflict_score))
-    #         bins = first_fit(tc, conflict_score)
-    #         total_bins.append(len(bins))
-    #     layer_bin_data.append(total_bins)
-
-    # for lidx, total_bins in enumerate(layer_bin_data):
-    #     plt.plot(conflict_scores, total_bins, label='Layer {}'.format(lidx))
-
-    # plt.xlabel('Max Conflict Score')
-    # plt.ylabel('Number of Data Channels')
-    # plt.legend(loc=0)
-    # plt.xlim((-0.05, 1.05))
-    # plt.tight_layout()
-    # plt.savefig('figures/first_fit_conflicts.png', dpi=300)
-
-
-    # # zeros = []
-    # for i, l in enumerate(model.features):
-    #     if type(l) == AverageTracker:
-    #         z = l.channel_zeros()
-    #         zeros.append(z.tolist())
-    #         #plt.plot(torch.sort(z)[0].tolist(), '-o', linewidth=2)
-    #         #plt.savefig('{}-{}-zeros.png'.format(args.arch, i))
-    #         #plt.clf()
-
-    # with open('{}.pkl'.format(args.arch), 'wb') as f:
-    #     pickle.dump(zeros, f)
+    criterion = nn.CrossEntropyLoss().cuda(0)
+    val_loss, val_acc = validate(val_loader, model, criterion)
