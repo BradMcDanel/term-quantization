@@ -125,11 +125,10 @@ def validate(val_loader, model, criterion):
 def tune_bn(loader, model, args, name):
     # switch to evaluate mode
     model.train()
-    for _ in range(iters):
-        with torch.no_grad():
-            for i, (images, _) in enumerate(loader):
-                images = images.cuda(0, non_blocking=True)
-                _ = model(images)
+    with torch.no_grad():
+        for i, (images, _) in enumerate(loader):
+            images = images.cuda(0, non_blocking=True)
+            _ = model(images)
 
 
 def evaluate(loader, model, args, name):
