@@ -456,7 +456,8 @@ if __name__=='__main__':
             batch_size=args.batch_size, shuffle=False,
             num_workers=args.workers, pin_memory=True)
 
-    add_masked_conv(model)
+    assert False
+    # add_masked_conv(model)
     train_conflicts, trackers = evaluate(train_loader, model, args, 'train')
 
     # channel_mags = []
@@ -469,9 +470,9 @@ if __name__=='__main__':
 
     model.cpu()
     # prune_pcts = [0.0, 0.9, 0.9, 0.9, 0.9]
-    prune_pcts = [0.0, 0.5, 0.5, 0.5, 0.5]
-    for layer, prune_pct in zip(get_layers(model, [MaskedConv2d]), prune_pcts):
-        prune(layer, prune_pct)
+    # prune_pcts = [0.0, 0.5, 0.5, 0.5, 0.5]
+    # for layer, prune_pct in zip(get_layers(model, [MaskedConv2d]), prune_pcts):
+    #     prune(layer, prune_pct)
     model.cuda(0)
 
     v = model.features[1].running_var.clone()
