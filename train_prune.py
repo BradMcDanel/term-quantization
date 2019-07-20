@@ -161,21 +161,23 @@ def main_worker(gpu, ngpus_per_node, args):
         model = models.__dict__[args.arch]()
 
     # optionally resume from a checkpoint
-    if args.resume:
-        if os.path.isfile(args.resume):
-            print("=> loading checkpoint '{}'".format(args.resume))
-            checkpoint = torch.load(args.resume)
-            args.start_epoch = checkpoint['epoch']
-            best_acc1 = checkpoint['best_acc1']
-            if args.gpu is not None:
-                # best_acc1 may be from a checkpoint from a different GPU
-                best_acc1 = best_acc1.to(args.gpu)
-            model.load_state_dict(checkpoint['state_dict'])
-            optimizer.load_state_dict(checkpoint['optimizer'])
-            print("=> loaded checkpoint '{}' (epoch {})"
-                  .format(args.resume, checkpoint['epoch']))
-        else:
-            print("=> no checkpoint found at '{}'".format(args.resume))
+    if os.path.isfile(args.resume):
+        print("=> loading checkpoint '{}'".format(args.resume))
+        checkpoint = torch.load(args.resume)
+        tmp_state_dict = dict(checkpoint['state_dict'])
+        state_dict = {}
+        for key in tmp_state_dict.keys():
+            if 'module.' in key:
+                new_key = key.replace('module.', '')
+            else:
+                new_key = key
+            state_dict[new_key] = tmp_state_dict[key]
+        state_dict = OrderedDict(state_dict)
+        model.load_state_dict(state_dict)
+        print("=> loaded checkpoint '{}' (epoch {})"
+              .format(args.resume, checkpoint['epoch']))
+    else:
+        print("=> no checkpoint found at '{}'".format(args.resume))
 
     model.cpu()
     prune_pcts = [0.0, 0.5, 0.5, 0.5, 0.5]
