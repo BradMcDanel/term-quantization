@@ -5,6 +5,7 @@ import shutil
 import time
 import warnings
 import math
+from collections import OrderedDict
 
 import numpy as np
 import torch
@@ -164,6 +165,7 @@ def main_worker(gpu, ngpus_per_node, args):
     if os.path.isfile(args.resume):
         print("=> loading checkpoint '{}'".format(args.resume))
         checkpoint = torch.load(args.resume)
+        args.start_epoch = checkpoint['epoch']
         tmp_state_dict = dict(checkpoint['state_dict'])
         state_dict = {}
         for key in tmp_state_dict.keys():
