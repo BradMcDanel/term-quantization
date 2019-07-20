@@ -22,6 +22,7 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 
 import models
+from masked_conv import MaskedConv2d
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -84,12 +85,22 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
 best_acc1 = 0
 
 def prune(layer, prune_pct):
-    weight = layer.weight.data.view(-1)
+    weight = layer._weight.data
     num_weights = len(weight)
     num_prune = math.ceil(num_weights * prune_pct)
     prune_idxs = weight.abs().sort()[1][:num_prune]
-    weight[prune_idxs] = 0
-    layer.weight.data = weight.view_as(layer.weight)
+    layer._mask[prune_idxs] = 0
+    layer._weight.data[prune_idxs] = 0
+
+def add_masked_conv(model):
+    for child_name, child in model.named_children():
+        if isinstance(child, nn.Conv2d):
+            m = MaskedConv2d(child.in_channels, child.out_channels, child.kernel_size,
+                             child.stride, child.padding, child.dilation, child.groups)
+            m._weight.data = child.weight.data.view(-1)
+            setattr(model, child_name, m)
+        else:
+            add_masked_conv(child)
 
 def get_layers(model, layer_types):
     layers = []
