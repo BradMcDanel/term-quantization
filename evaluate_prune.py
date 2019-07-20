@@ -241,18 +241,11 @@ def first_fit(conflict_mat, max_conflict_score=0.01, max_columns=8):
             bins.append([column])
     return bins
 
-def prune(layer, prune_pct, channel_mag):
-    # normalize by activation values
-    B, C, W, H = layer.weight.data.shape
-    weight_mag = layer.weight.data.permute(1, 0, 2, 3).contiguous().view(C, -1)
-    weight_mag = channel_mag.view(-1, 1) * weight_mag
-    weight_mag = weight_mag.view(C, B, W, H).permute(1, 0, 2, 3).contiguous()
-    weight_mag = weight_mag.abs().view(-1)
-
+def prune(layer, prune_pct):
     weight = layer.weight.data.view(-1)
     num_weights = len(weight)
     num_prune = math.ceil(num_weights * prune_pct)
-    prune_idxs = weight_mag.sort()[1][:num_prune]
+    prune_idxs = weight.abs().sort()[1][:num_prune]
     weight[prune_idxs] = 0
     layer.weight.data = weight.view_as(layer.weight)
 
@@ -452,7 +445,8 @@ if __name__=='__main__':
             num_workers=args.workers, pin_memory=True)
 
     train_conflicts, trackers = evaluate(train_loader, model, args, 'train')
-    channel_mags = [torch.Tensor([1,1,1])]
+
+    channel_mags = []
     for tracker in trackers:
         if len(tracker.x.shape) != 4: continue
         channel_mag = tracker.avg_data().mean((1,2))
@@ -461,6 +455,7 @@ if __name__=='__main__':
         channel_mags.append(torch.ones(len(channel_mag)))
 
     model.cpu()
+    # prune_pcts = [0.0, 0.9, 0.9, 0.9, 0.9]
     prune_pcts = [0.0, 0.5, 0.5, 0.5, 0.5]
     for layer, prune_pct, channel_mag in zip(get_layers(model, [nn.Conv2d]), prune_pcts, channel_mags):
         prune(layer, prune_pct, channel_mag)
