@@ -23,6 +23,7 @@ import torchvision.datasets as datasets
 
 import models
 from masked_conv import MaskedConv2d
+import packing
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -193,10 +194,13 @@ def main_worker(gpu, ngpus_per_node, args):
         print("=> no checkpoint found at '{}'".format(args.resume))
 
     model.cpu()
-    add_masked_conv(model)
+    layer_groups = [2, 2, 3, 3, 3]
     prune_pcts = [0.5, 0.5, 0.666, 0.666, 0.666]
-    for layer, prune_pct in zip(get_layers(model, [MaskedConv2d]), prune_pcts):
+    for layer, prune_pct, groups in zip(get_layers(model, [MaskedConv2d]), prune_pcts, layer_groups):
         prune(layer, prune_pct)
+        layer.groups = groups
+    model.cuda(0)
+    packing.pack_model(model, 0.3)
     
     print(model)
     print((model.features[4]._mask == 0).long().sum(), len(model.features[4]._mask))

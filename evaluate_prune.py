@@ -44,6 +44,7 @@ import models
 import cgm
 from masked_conv import MaskedConv2d
 import numpy as np
+import packing
 
 def accuracy(output, target, topk=(1,)):
     """Computes the accuracy over the k top predictions for the specified values of k"""
@@ -210,7 +211,7 @@ def add_masked_conv(model):
     for child_name, child in model.named_children():
         if isinstance(child, nn.Conv2d):
             m = MaskedConv2d(child.in_channels, child.out_channels, child.kernel_size,
-                             child.stride, child.padding, child.dilation, child.groups)
+                             child.stride, child.padding, child.dilation, 2)
             m._weight.data = child.weight.data.view(-1)
             setattr(model, child_name, m)
         else:
@@ -259,7 +260,6 @@ def prune(layer, prune_pct):
     prune_idxs = weight.abs().sort()[1][:num_prune]
     layer._mask[prune_idxs] = 0
     layer._weight.data[prune_idxs] = 0
-
 
 model_names = sorted(name for name in models.__dict__
     if name.islower() and not name.startswith("__")
@@ -456,9 +456,7 @@ if __name__=='__main__':
             batch_size=args.batch_size, shuffle=False,
             num_workers=args.workers, pin_memory=True)
 
-    assert False
-    # add_masked_conv(model)
-    train_conflicts, trackers = evaluate(train_loader, model, args, 'train')
+    # train_conflicts, trackers = evaluate(train_loader, model, args, 'train')
 
     # channel_mags = []
     # for tracker in trackers:
@@ -468,15 +466,19 @@ if __name__=='__main__':
     #     # channel_mags.append(channel_mag.cpu())
     #     channel_mags.append(torch.ones(len(channel_mag)))
 
+    add_masked_conv(model)
+
     model.cpu()
-    # prune_pcts = [0.0, 0.9, 0.9, 0.9, 0.9]
-    # prune_pcts = [0.0, 0.5, 0.5, 0.5, 0.5]
-    # for layer, prune_pct in zip(get_layers(model, [MaskedConv2d]), prune_pcts):
-    #     prune(layer, prune_pct)
+    layer_groups = [2, 2, 3, 3, 3]
+    prune_pcts = [0.5, 0.5, 0.666, 0.666, 0.666]
+    for layer, prune_pct, groups in zip(get_layers(model, [MaskedConv2d]), prune_pcts, layer_groups):
+        prune(layer, prune_pct)
+        layer.groups = groups
     model.cuda(0)
 
-    v = model.features[1].running_var.clone()
-    # tune_bn(train_loader, model, args, 'train')
+    packing.pack_model(model, 0.3)
+
+    tune_bn(train_loader, model, args, 'train')
 
     criterion = nn.CrossEntropyLoss().cuda(0)
     val_loss, val_acc = validate(val_loader, model, criterion)
