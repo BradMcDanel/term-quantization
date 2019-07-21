@@ -193,9 +193,13 @@ def main_worker(gpu, ngpus_per_node, args):
         print("=> no checkpoint found at '{}'".format(args.resume))
 
     model.cpu()
-    prune_pcts = [0.0, 0.5, 0.5, 0.5, 0.5]
-    for layer, prune_pct in zip(get_layers(model, [nn.Conv2d]), prune_pcts):
+    add_masked_conv(model)
+    prune_pcts = [0.5, 0.5, 0.666, 0.666, 0.666]
+    for layer, prune_pct in zip(get_layers(model, [MaskedConv2d]), prune_pcts):
         prune(layer, prune_pct)
+    
+    print(model)
+    print((model.features[4]._mask == 0).long().sum(), len(model.features[4]._mask))
 
     if args.distributed:
         # For multiprocessing distributed, DistributedDataParallel constructor
