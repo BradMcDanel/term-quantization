@@ -3,6 +3,7 @@ import pickle
 import io
 import time
 import os
+import shutil
 
 import msgpack
 from PIL import Image

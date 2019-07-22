@@ -46,13 +46,9 @@ class ShiftNet(nn.Module):
 
     def forward(self, x):
         x = self.features(x)
-        print(x.shape)
         x = self.avgpool(x)
-        print(x.shape)
         x = x.view(x.size(0), self.feature_outchannels)
-        print(x.shape)
         x = self.classifier(x)
-        print(x.shape)
         return x
 
 def shiftnet19(pretrained=False):
