@@ -36,6 +36,17 @@ def import_plt_settings(local_display=True):
 
     return plt
 
+def get_layers(model, layer_types):
+    layers = []
+    for child in model.children():
+        if any([isinstance(child, l) for l in layer_types]):
+            layers.append(child)
+        else:
+            child_layers = get_layers(child, layer_types)
+            layers.extend(child_layers)
+    
+    return layers
+
 def get_imagenet(args, train_name='ILSVRC-train.bin', num_train=1281167, num_val=50000):
     ### begin custom data loader
     # using custom msgpack data loader due to slow disk, replace with standard

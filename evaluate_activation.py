@@ -1,4 +1,6 @@
 import argparse
+import math
+import copy
 import os
 import random
 import shutil
@@ -210,31 +212,97 @@ if __name__=='__main__':
 
     train_loader, train_sampler, val_loader = util.get_imagenet(args, 'ILSVRC-train-chunk.bin',
                                                                 num_train=8000)
-    util.add_average_trackers(model)
-    model.cuda(0)
-    train_conflicts, trackers = evaluate(train_loader, model, args, 'train')
-    criterion = nn.CrossEntropyLoss().cuda(0)
-    # val_loss, val_acc = util.validate(val_loader, model, criterion, args)
+    
+    def get_layer_sizes(model):
+        model = copy.deepcopy(model)
+        util.add_average_trackers(model)
+        model.cuda(0)
+        _, trackers = evaluate(train_loader, model, args, 'train')
+        conv_layers = util.get_layers(model, [nn.Conv2d])
+        weight_sizes, data_sizes = [], []
+        for i in range(len(conv_layers)):
+            B, C, W, H = conv_layers[i].weight.shape
+            data_w = trackers[i].x.shape[1]
+            data_h = trackers[i].x.shape[2]*trackers[i].x.shape[3]
+            weight_w = C*W*H
+            weight_h = B
+            weight_sizes.append((weight_w, weight_h))
+            data_sizes.append((data_w, data_h))
+        
+        return weight_sizes, data_sizes
 
-    conflicts, layer_columns = [], []
-    for i in range(len(train_conflicts)):
-        size_idxs = torch.sort(trackers[i].channel_zeros())[1].tolist()
-        columns = first_fit(train_conflicts[i], size_idxs, max_conflict_score=0.15, max_columns=8)
-        print(len(columns))
-        layer_columns.append(columns)
-        conflict_scores = []
-        for col in columns:
-            conflict_scores.append(100.*get_conflict_score(train_conflicts[i], col))
+    def test_packing(model, conflict_score, sa_size=64):
+        model = copy.deepcopy(model)
+        util.add_average_trackers(model)
+        model.cuda(0)
+        train_conflicts, trackers = evaluate(train_loader, model, args, 'train')
+        conv_layers = util.get_layers(model, [nn.Conv2d])
 
-        conflicts.append(conflict_scores)
+        conflicts, layer_columns, tiles = [], [], []
+        for i in range(len(train_conflicts)):
+            B, C, W, H = conv_layers[i].weight.shape
+            size_idxs = torch.sort(trackers[i].channel_zeros())[1].tolist()
+            columns = first_fit(train_conflicts[i], size_idxs, max_conflict_score=conflict_score,
+                                max_columns=8)
+            data_w = len(columns)
+            data_h = trackers[i].x.shape[2]*trackers[i].x.shape[3]
+            print(trackers[i].x.shape)
+            weight_w = C*W*H
+            weight_h = B
+            if data_w*data_h < weight_w*weight_h:
+                tiles.append(math.ceil(data_w / sa_size) * math.ceil(data_h / sa_size))
+            else:
+                tiles.append(math.ceil(weight_w / sa_size) * math.ceil(weight_h / sa_size))
 
-    model.features[2] = nn.Sequential(cgm.StaticCGM(layer_columns[0]), util.AverageTracker())
-    model.features[6] = nn.Sequential(cgm.StaticCGM(layer_columns[1]), util.AverageTracker())
-    model.features[10] = nn.Sequential(cgm.StaticCGM(layer_columns[2]), util.AverageTracker())
-    model.features[13] = nn.Sequential(cgm.StaticCGM(layer_columns[3]), util.AverageTracker())
-    model.features[16] = nn.Sequential(cgm.StaticCGM(layer_columns[4]), util.AverageTracker())
+            print('Data: {}x{}, Weight: {}x{}'.format(data_h, data_w, weight_h, weight_w))
+            layer_columns.append(columns)
+            conflict_scores = []
+            for col in columns:
+                conflict_scores.append(100.*get_conflict_score(train_conflicts[i], col))
 
-    tune_bn(train_loader, model, args)
+            conflicts.append(conflict_scores)
 
-    criterion = nn.CrossEntropyLoss().cuda(0)
-    val_loss, val_acc = util.validate(val_loader, model, criterion, args)
+        model.features[2] = nn.Sequential(cgm.StaticCGM(layer_columns[0]), util.AverageTracker())
+        model.features[6] = nn.Sequential(cgm.StaticCGM(layer_columns[1]), util.AverageTracker())
+        model.features[10] = nn.Sequential(cgm.StaticCGM(layer_columns[2]), util.AverageTracker())
+        model.features[13] = nn.Sequential(cgm.StaticCGM(layer_columns[3]), util.AverageTracker())
+        model.features[16] = nn.Sequential(cgm.StaticCGM(layer_columns[4]), util.AverageTracker())
+
+        tune_bn(train_loader, model, args)
+
+        criterion = nn.CrossEntropyLoss().cuda(0)
+        val_loss, val_acc = util.validate(val_loader, model, criterion, args)
+        return val_acc, sum(tiles)
+
+    # weight_sizes, data_sizes = get_layer_sizes(model)
+    # xs = np.arange(1, len(data_sizes) + 1).tolist()
+    # plt.plot(xs, [w*h for w, h in data_sizes], linewidth=2, label='data')
+    # plt.plot(xs, [w*h for w, h in weight_sizes], linewidth=2, label='weight')
+    # plt.title(args.arch)
+    # plt.xlabel('Convolution Layer Index')
+    # plt.ylabel('Matrix Size (width * height)')
+    # plt.xticks(xs)
+    # plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+    # plt.legend(loc=0)
+    # plt.savefig('figures/weight-data-size-{}.png'.format(args.arch), dpi=300)
+    # plt.clf()
+
+    # conflict_scores = [0.01, 0.05, 0.10, 0.15, 0.2, 0.25, 0.30]
+    conflict_scores = [0, 0.001, 0.025, 0.05, 0.10, 0.15, 0.2, 0.25, 0.3]
+    accs, tiles = [], []
+    for score in conflict_scores:
+        acc, tile = test_packing(model, score, sa_size=32)
+        accs.append(acc)
+        tiles.append(tile)
+
+    fig, ax1 = plt.subplots()
+
+    ax2 = ax1.twinx()
+    ax1.plot(conflict_scores, accs, 'b-', linewidth=3)
+    ax2.plot(conflict_scores, [tiles[0] / t for t in tiles], 'g-', linewidth=3)
+
+    ax1.set_xlabel('Conflict Score')
+    ax1.set_ylabel('Classification Accuracy (%)', color='b')
+    ax2.set_ylabel('Tile Reduction Factor', color='g')
+
+    plt.savefig('figures/conflict_score.png', dpi=300)
