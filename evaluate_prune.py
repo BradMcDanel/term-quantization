@@ -24,7 +24,7 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from torchvision.utils import make_grid, save_image
 import matplotlib
-matplotlib.use('Agg')
+# matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 SMALL_SIZE = 13
 MEDIUM_SIZE = 17
@@ -466,6 +466,7 @@ if __name__=='__main__':
     #     # channel_mags.append(channel_mag.cpu())
     #     channel_mags.append(torch.ones(len(channel_mag)))
 
+    add_average_trackers(model)
     add_masked_conv(model)
 
     model.cpu()
@@ -476,9 +477,10 @@ if __name__=='__main__':
         layer.groups = groups
     model.cuda(0)
 
-    packing.pack_model(model, 0.3)
+    packing.pack_model(model, 0.0)
 
-    tune_bn(train_loader, model, args, 'train')
+    assert False
+    # tune_bn(train_loader, model, args, 'train')
 
     criterion = nn.CrossEntropyLoss().cuda(0)
     val_loss, val_acc = validate(val_loader, model, criterion)
