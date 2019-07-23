@@ -211,7 +211,7 @@ if __name__=='__main__':
     cudnn.benchmark = True
 
     train_loader, train_sampler, val_loader = util.get_imagenet(args, 'ILSVRC-train-chunk.bin',
-                                                                num_train=8000)
+                                                                num_train=1000, num_val=1000)
     
     def get_layer_sizes(model):
         model = copy.deepcopy(model)
@@ -298,8 +298,8 @@ if __name__=='__main__':
     fig, ax1 = plt.subplots()
 
     ax2 = ax1.twinx()
-    ax1.plot(conflict_scores, accs, 'b-', linewidth=3)
-    ax2.plot(conflict_scores, [tiles[0] / t for t in tiles], 'g-', linewidth=3)
+    ax1.plot(conflict_scores[:6], accs[:6], 'b-o', linewidth=3)
+    ax2.plot(conflict_scores[:6], [tiles[0] / t for t in tiles[:6]], 'g-o', linewidth=3)
 
     ax1.set_xlabel('Conflict Score')
     ax1.set_ylabel('Classification Accuracy (%)', color='b')
