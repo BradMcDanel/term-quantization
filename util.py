@@ -4,6 +4,7 @@ import io
 import time
 import os
 import shutil
+import math
 
 import msgpack
 from PIL import Image
@@ -46,6 +47,24 @@ def get_layers(model, layer_types):
             layers.extend(child_layers)
     
     return layers
+
+def cycle_time(stationary_mat, piped_mat, sa_size):
+    '''
+    Computes systolic array cycle time (does not include possible I/O cost).
+    Bit-parallel computation assumed.
+    '''
+    sw, sh = stationary_mat
+    pw, ph = piped_mat
+
+    assert pw == sw, 'stationary and piped width must match. Got {} and {}.'.format(sw, pw)
+
+    cycles = 0
+    num_tiles = math.ceil(sw / sa_size) * math.ceil(sh / sa_size)
+    for _ in range(num_tiles):
+        # weight loading (sa_size) + data loading (ph) + skew (sa_size*2)
+        cycles += sa_size + ph + sa_size*2
+    
+    return cycles
 
 def get_imagenet(args, train_name='ILSVRC-train.bin', num_train=1281167, num_val=50000):
     ### begin custom data loader
