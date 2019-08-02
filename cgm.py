@@ -7,26 +7,24 @@ cgm_cuda = load(
     'cgm_cuda', ['kernels/cgm_cuda.cpp', 'kernels/cgm_cuda_kernel.cu'], extra_cflags=['-O3'])
 
 class StaticCGM(nn.Module):
-    def __init__(self, columns):
+    def __init__(self, groups):
         super(StaticCGM, self).__init__()
-        self.columns = columns
+        max_group_size = max([len(g) for g in groups])
+        for group in groups:
+            num_add = max_group_size - len(group)
+            group += [-1] * num_add
+        self.groups = torch.Tensor(groups).int().cuda()
 
     def forward(self, x):
-        B, C, W, H = x.shape
-        x = x.permute(1, 0, 2, 3).contiguous().view(C, B*W*H)
-        x_out = torch.zeros_like(x)
-        for columns in self.columns:
-            xi = torch.index_select(x, 0, torch.Tensor(columns).long().cuda(0))
-            max_idx = torch.max(xi, dim=0)[1]
-            idx_rng = torch.arange(B*W*H)
+        return cgm_cuda.static(x, self.groups)
 
-            for i in reversed(range(len(columns))):
-                max_idx[max_idx == i] = columns[i]
-        
-            x_out[max_idx, idx_rng] = x[max_idx, idx_rng]
-
-        x_out = x_out.view(C, B, W, H).permute(1, 0, 2, 3).contiguous()
-        return F.relu(x_out)
+class QPointQuantize(nn.Module):
+    def __init__(self, qpoints):
+        super(QPointQuantize, self).__init__()
+        self.qpoints = qpoints
+    
+    def forward(self, x):
+        return cgm_cuda.qpoint_quantize(x, self.qpoints)
 
 class CGM(nn.Module):
     def __init__(self, group_size, max_clamp=1e10):
@@ -76,6 +74,15 @@ if __name__=='__main__':
     import gradcheck
     x = Variable(torch.Tensor(2, 8, 16, 16).uniform_(-1, 1).double().cuda())
     x.requires_grad = True
+    qpoints = torch.Tensor([-0.5, 0.0, 0.5]).double().cuda()
+    layer = QPointQuantize(qpoints)
+    xout = layer(x)
+    assert False
+
+    groups = [[0, 5, 7, 2], [1, 3, 4], [6]]
+    layer = StaticCGM(groups)
+    xout = layer(x)
+    assert False
 
     for i in range(1, 9):
         layer = CGM(i, 1.0).cuda()

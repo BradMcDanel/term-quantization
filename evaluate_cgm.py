@@ -30,7 +30,7 @@ import util
 plt = util.import_plt_settings(local_display=False)
 import models
 import cgm
-
+import booth
 
 
 def evaluate(loader, model, args, name):
@@ -232,8 +232,15 @@ if __name__=='__main__':
             data_sizes.append((data_w, data_h))
         
         return weight_sizes, data_sizes
+    
+    def replace_weights(model, weight_values):
+        for layer in model.children():
+            if isinstance(layer, nn.Conv2d):
+                layer.weight.data = cgm.cgm_cuda.qpoint_quantize(layer.weight.data, weight_values)
+            else:
+                replace_weights(layer, weight_values)
 
-    def test_packing(init_model, conflict_score, sa_size=64):
+    def test_packing(init_model, conflict_score, weight_qpoints, data_qpoints, sa_size=64):
         model = copy.deepcopy(init_model)
         util.add_average_trackers(model)
         model.cuda(0)
@@ -251,7 +258,6 @@ if __name__=='__main__':
             weight_h = B
             ws_time = util.cycle_time((data_w, weight_h), (data_w, data_h), sa_size)
             ds_time = util.cycle_time((data_w, data_h), (data_w, weight_h), sa_size)
-            print(ws_time, ds_time)
             tiles.append(min(ds_time, ws_time))
 
             layer_columns.append(columns)
@@ -261,11 +267,16 @@ if __name__=='__main__':
 
             conflicts.append(conflict_scores)
 
+
         model = copy.deepcopy(init_model)
         curr_relu = 0
+        replace_weights(model, weight_qpoints)
         for i in range(len(model.features)):
             if type(model.features[i]) == nn.ReLU:
-                model.features[i] = cgm.StaticCGM(layer_columns[curr_relu])
+                model.features[i] = nn.Sequential(
+                    cgm.StaticCGM(layer_columns[curr_relu]),
+                    cgm.QPointQuantize(data_qpoints)
+                )
                 curr_relu += 1
 
         model.cuda(0)
@@ -273,7 +284,7 @@ if __name__=='__main__':
 
         criterion = nn.CrossEntropyLoss().cuda(0)
         _, val_acc = util.validate(val_loader, model, criterion, args)
-        return val_acc, sum(tiles)
+        return model, val_acc, sum(tiles)
 
     # weight_sizes, data_sizes = get_layer_sizes(model)
     # xs = np.arange(1, len(data_sizes) + 1).tolist()
@@ -289,10 +300,19 @@ if __name__=='__main__':
     # plt.clf()
 
     # conflict_scores = [0.01, 0.05, 0.10, 0.15, 0.2, 0.25, 0.30]
-    conflict_scores = [0, 0.025, 0.05, 0.10, 0.15, 0.2, 0.25, 0.3]
+    # conflict_scores = [0, 0.025, 0.05, 0.10, 0.15, 0.2, 0.25, 0.3]
+    weight_exp = -7
+    data_exp = -4
+    num_booth_terms = 4
+    values, value_powers = booth.two_powers(1, 9)
+    weight_qpoints = 2**weight_exp * torch.Tensor(values).cuda(args.gpu)
+    data_qpoints = [booth.lossy_encode(i, num_booth_terms) for i in range(-127, 127)]
+    data_qpoints = list(set(data_qpoints))
+    data_qpoints = 2**data_exp * torch.Tensor(data_qpoints).cuda(args.gpu)
+    conflict_scores = [0, 0.05, 0.10, 0.15]
     accs, tiles = [], []
     for score in conflict_scores:
-        acc, tile = test_packing(model, score, sa_size=32)
+        qmodel, acc, tile = test_packing(model, score, weight_qpoints, data_qpoints, sa_size=32)
         accs.append(acc)
         tiles.append(tile)
 

@@ -30,7 +30,7 @@ import booth
 import cgm
 import models
 import util
-plt = util.import_plt_settings(local_display=False)
+plt = util.import_plt_settings(local_display=True)
 
 def tune_bn(loader, model, args):
     # switch to train mode (update bn mean/gamma)
@@ -131,29 +131,35 @@ if __name__=='__main__':
     cudnn.benchmark = True
 
     train_loader, train_sampler, val_loader = util.get_imagenet(args, 'ILSVRC-train-chunk.bin',
-                                                                num_train=800, num_val=500)
+                                                                num_train=8000, num_val=50000)
+    # for pretrained resnet
+    def replace_weights(model, weight_exp, terms, group_size, num_keep_terms):
+        for layer in model.children():
+            if isinstance(layer, nn.Conv2d):
+                C = layer.weight.shape[1]
+                print(C, group_size)
+                single = booth.weight_single_quant(layer.weight.data, 2**weight_exp,
+                                                   terms, num_keep_terms // group_size)
+                group = booth.weight_group_quant(layer.weight.data, 2**weight_exp,
+                                                 terms, min(C, group_size), num_keep_terms)
+                # print((single.view(-1) - layer.weight.data.view(-1)).abs().sum(),
+                #       (group.view(-1) - layer.weight.data.view(-1)).abs().sum())
+                if layer.kernel_size[0] != 1:
+                    continue
+                else:
+                    layer.weight.data = group
+            else:
+                replace_weights(layer, weight_exp, terms, group_size, num_keep_terms)
 
-    def booth_test(model, weight_exp, data_exp, booth_values):
+    def booth_test(model, weight_exp, data_exp, num_weight_exps, num_data_exps, group_size, terms):
         model = copy.deepcopy(model)
-        booth_weight_values = 2**weight_exp * torch.Tensor(booth_values).cuda(args.gpu)
-        booth_data_values = 2**data_exp * torch.Tensor(booth_values).cuda(args.gpu)
-        # booth_weight_values = torch.Tensor([2**i for i in range(-7, 1)] + [-2**i for i in range(-7, 1)] + [0]).cuda()
         model.cuda(0)
 
-        # for pretrained resnet
-        def replace_weights(model):
-            for layer in model.children():
-                if isinstance(layer, nn.Conv2d):
-                    layer.weight.data = booth.booth_quant(layer.weight.data, booth_weight_values)
-                    # layer.weight.data = net.quantize_cuda.forward(layer.weight.data, 2**-7, -127*2**-7, 127*2**-7, -127*2**-7)
-                else:
-                    replace_weights(layer)
-
-        replace_weights(model)
+        replace_weights(model, weight_exp, terms, group_size, num_weight_exps)
 
         act_layer = nn.Sequential(
                         nn.ReLU(inplace=True),
-                        booth.BoothQuant(booth_data_values),
+                        booth.BoothQuant(2**data_exp, num_data_exps),
                         # util.AverageTracker()
                     )
 
@@ -161,31 +167,101 @@ if __name__=='__main__':
             if type(model.features[i]) == nn.ReLU:
                 model.features[i] = act_layer
 
+        model.cuda()
         criterion = nn.CrossEntropyLoss().cuda(0)
         tune_bn(train_loader, model, args)
-        _, acc = util.validate(val_loader, model, criterion, args)
-        del model
-
-        return acc
-
-
-    names = ['fixed-point', 'two', 'two-signed', 'three', 'three-signed']
-    all_booth_values = [
-        list(range(-127, 128)),
-        booth.booth_two_values(0, 8, signed=False),
-        booth.booth_two_values(0, 8, signed=True),
-        booth.booth_three_values(0, 8, signed=False),
-        booth.booth_three_values(0, 8, signed=True),
-    ]
-    weight_exps = [-7, -6]
-    data_exps = [-5, -4, -3]
+        _, acc = util.validate(val_loader, model, criterion, args, verbose=False)
+        return model, acc
+     
+    values, value_powers = booth.two_powers(1, 9)
+    values = list(range(-512, 512))
+    num_columns = 2
+    num_cycles = 2
+    num_data_exp = 4
+    # num_weight_exps = [1, 2, 3, 4]
+    # group_sizes = [1, 2, 4, 8, 16, 32]
+    num_weight_exps = [1]
+    group_sizes = [16, 32]
+    weight_terms = booth.min_power_rep(8, 6)
+    weight_terms = booth.pad_torch_mat(weight_terms, min_dim=6).int().cuda()
     accs = []
-    for booth_values in all_booth_values:
-        acc_type = []
-        for weight_exp in weight_exps:
-            for data_exp in data_exps:
-                acc = booth_test(model, weight_exp, data_exp, booth_values)
-                acc_type.append(acc)
+    names = ['G=1', 'G=2', 'G=4', 'G=8', 'G=16', 'G=32']
+    for group_size in group_sizes:
+        acc_row = [] 
+        for num_weight_exp in num_weight_exps:
+            we = num_weight_exp*group_size
+            qmodel, acc = booth_test(model, -8, -7, we, num_data_exp, group_size, weight_terms)
+            print(group_size, we, acc)
+            acc_row.append(acc.item())
+        accs.append(acc_row)
     
-    for name, acc_type in zip(names, accs):
-        print('{}: {}'.format(name, acc_type))
+    for name, acc_row, group_size in zip(names, accs, group_sizes):
+        plt.plot(num_weight_exps, acc_row, linewidth=2.5, label=name)
+    plt.legend(loc=0)
+    plt.xlabel('Number of Weight Terms')
+    plt.ylabel('Classification Accuracy (%)')
+    plt.yscale('log')
+    plt.savefig('figures/pow2-grouping.png', dpi=300)
+    plt.clf()
+    assert False
+
+    # model.cuda(args.gpu)
+    # weight_exp = -8
+    # min_exp, max_exp = 1, 9
+    # # weight_exp = -7
+    # # min_exp, max_exp = 0, 8
+    # w = model.features[4].weight.data
+    # float_vals = w.view(-1).tolist()
+    # values, value_powers = booth.two_powers(min_exp, max_exp)
+    # booth_weight_values = 2**weight_exp * torch.Tensor(values).cuda(args.gpu)
+    # replace_weights(model, booth_weight_values)
+    # vals = (model.features[4].weight.data.view(-1) / 2**weight_exp).long().tolist()
+    # exp_bins = [0] * ((max_exp - min_exp) * 2 + 1)
+
+    # power_rep = []
+    # num_exps = [0] * 8
+    # for v in vals:
+    #     powers = booth.encode(v)
+    #     print(v, powers)
+    #     powers = booth.get_powers(v, value_powers, max_exp)
+    #     for power in powers:
+    #         exp_bins[power + max_exp - 1] += 1
+
+    #     if powers[0] == 0:
+    #         power_rep.append(0)
+    #         num_exps[0] += 1
+    #     else:
+    #         power_rep.append(len(powers))
+    #         num_exps[len(powers)] += 1
+    
+    # power_rep = torch.Tensor(power_rep).view_as(w)
+    
+    # plt.bar([0, 1, 2], num_exps, width=0.8, edgecolor='black')
+    # plt.xlabel('Number of Powers-of-Two Required per Weight')
+    # plt.ylabel('Frequency')
+    # plt.xticks([0, 1, 2])
+    # plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+    # plt.savefig('figures/freq/num_exp_freq.png', dpi=300)
+    # plt.clf()
+
+    # plt.bar(np.arange(len(exp_bins)), exp_bins, width=0.8, edgecolor='black')
+    # plt.xlabel('Power-of-Two Weight Exponenet')
+    # plt.ylabel('Frequency')
+    # plt.xticks(np.arange(len(exp_bins)), [-8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8])
+    # plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+    # plt.savefig('figures/freq/exp_freq.png', dpi=300)
+    # plt.clf()
+
+    # plt.hist(float_vals, bins=100, edgecolor='black')
+    # plt.xlabel('Float Weight Value')
+    # plt.ylabel('Frequency')
+    # plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+    # plt.savefig('figures/freq/float_freq.png', dpi=300)
+    # plt.clf()
+
+    # plt.hist([v * 2**weight_exp for v in vals], bins=100, edgecolor='black')
+    # plt.xlabel('Weight Value (after quantization)')
+    # plt.ylabel('Frequency')
+    # plt.ticklabel_format(style='sci', axis='y', scilimits=(0,0))
+    # plt.savefig('figures/freq/fixed_freq.png', dpi=300)
+    # plt.clf()
