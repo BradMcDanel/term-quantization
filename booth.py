@@ -8,13 +8,40 @@ from torch.utils.cpp_extension import load
 booth_cuda = load(
     'booth_cuda', ['kernels/booth_cuda.cpp', 'kernels/booth_cuda_kernel.cu'], extra_cflags=['-O3'])
 
-def twos_complement(input_value, num_bits):
-    '''Calculates a two's complement integer from the given input value's bits'''
-    mask = 2**(num_bits - 1)
-    return -(input_value & mask) + (input_value & ~mask)
+def binary_encode(number):
+    char_number = bin(number).split('b')[1]
+    char_number = char_number[::-1]
+    exponents = []
+    for i, bit in enumerate(char_number):
+        if bit == '1':
+            exponents.append(2**i)
 
-def encode(number):
-    # number = twos_complement(number, bits)
+    return exponents   
+
+def quant(tensor, sf, num_exps, func_type):
+    if func_type == 'binary':
+        f = binary_encode
+    elif func_type == 'radix-2':
+        f = radix_2
+    elif func_type == 'radix-2-hack':
+        f = radix_2_hack
+    elif func_type == 'radix-4':
+        f = radix_4
+    elif func_type == 'radix-8':
+        f = radix_8
+
+    shape = tensor.shape
+    tensor = tensor.view(-1).tolist()
+    truncated_tensor = []
+    for number in tensor:
+        trunc_number = f(int(number / sf))[-num_exps:]
+        truncated_tensor.append(sum(trunc_number))
+    
+    truncated_tensor = torch.Tensor(truncated_tensor).view(*shape).cuda()
+    truncated_tensor *= sf
+    return truncated_tensor
+
+def radix_2(number):
     char_number = bin(number).split('b')[1]
     if bin(number)[0] == '-':
         sign = -1
@@ -35,8 +62,132 @@ def encode(number):
 
     return exponents
 
-def lossy_encode(number, num_exps=8):
-    return sum(encode(number)[-num_exps:])
+def radix_2_hack(number):
+    char_number = bin(number).split('b')[1]
+    if bin(number)[0] == '-':
+        sign = -1
+    else:
+        sign = 1
+    char_number = '0' + char_number + '0'
+    char_number = char_number[::-1]
+    exponents = []
+    for i in range(len(char_number) - 1):
+        b1 = char_number[i]
+        b2 = char_number[i+1]
+        if b1 == b2:
+            continue
+        if b1 == '0':
+            exponents.append(-sign*2**i)
+        else:
+            exponents.append(sign*2**i)
+        
+    # merging neighbors hack
+    keep_exponents = []
+    for i in range(0, len(exponents), 2):
+        if exponents[i+1] == -(2*exponents[i]):
+            keep_exponents.append(-exponents[i])
+        else:
+            keep_exponents.append(exponents[i])
+            keep_exponents.append(exponents[i+1])
+
+    return keep_exponents
+
+def radix_4(number):
+    char_number = bin(number).split('b')[1]
+    if bin(number)[0] == '-':
+        sign = -1
+    else:
+        sign = 1
+    char_number = char_number + '0'
+    char_number = '00' + char_number
+    char_number = char_number[::-1]
+    exponents = [] 
+    bit_pos = 0
+    for i in range(1, len(char_number) - 1, 2):
+        b1 = char_number[i-1]
+        b2 = char_number[i]
+        b3 = char_number[i+1]
+        if b3 == '0' and b2 == '0' and b1 == '0':
+            pass
+        elif b3 == '0' and b2 == '0' and b1 == '1':
+            exponents.append(2**bit_pos)
+        elif b3 == '0' and b2 == '1' and b1 == '0':
+            exponents.append(2**bit_pos)
+        elif b3 == '0' and b2 == '1' and b1 == '1':
+            exponents.append(2**(bit_pos+1))
+        elif b3 == '1' and b2 == '0' and b1 == '0':
+            exponents.append(-2**(bit_pos+1))
+        elif b3 == '1' and b2 == '0' and b1 == '1':
+            exponents.append(-2**bit_pos)
+        elif b3 == '1' and b2 == '1' and b1 == '0':
+            exponents.append(-2**bit_pos)
+        elif b3 == '1' and b2 == '1' and b1 == '1':
+            pass
+
+        bit_pos += 2
+
+    return exponents
+
+def radix_8(number):
+    char_number = bin(number).split('b')[1]
+    if bin(number)[0] == '-':
+        sign = -1
+    else:
+        sign = 1
+    char_number = char_number + '0'
+    if char_number[-1] == '0':
+        char_number = '0'*5 + char_number
+    else:
+        char_number = '1'*5 + char_number
+
+    char_number = char_number[::-1]
+    exponents = [] 
+    bit_pos = 0
+    for i in range(1, len(char_number) - 2, 3):
+        b1 = char_number[i-1]
+        b2 = char_number[i]
+        b3 = char_number[i+1]
+        b4 = char_number[i+2]
+        if b4 == '0' and b3 == '0' and b2 == '0' and b1 == '0':
+            pass
+        elif b4 == '0' and b3 == '0' and b2 == '0' and b1 == '1':
+            exponents.append(2**bit_pos)
+        elif b4 == '0' and b3 == '0' and b2 == '1' and b1 == '0':
+            exponents.append(2**bit_pos)
+        elif b4 == '0' and b3 == '0' and b2 == '1' and b1 == '1':
+            exponents.append(2**(bit_pos+1))
+        elif b4 == '0' and b3 == '1' and b2 == '0' and b1 == '0':
+            exponents.append(2**(bit_pos+1))
+        elif b4 == '0' and b3 == '1' and b2 == '0' and b1 == '1':
+            exponents.append(2**bit_pos)
+            exponents.append(2**(bit_pos+1))
+        elif b4 == '0' and b3 == '1' and b2 == '1' and b1 == '0':
+            exponents.append(2**bit_pos)
+            exponents.append(2**(bit_pos+1))
+        elif b4 == '0' and b3 == '1' and b2 == '1' and b1 == '1':
+            exponents.append(2**(bit_pos+2))
+        elif b4 == '1' and b3 == '0' and b2 == '0' and b1 == '0':
+            exponents.append(-2**(bit_pos+2))
+        elif b4 == '1' and b3 == '0' and b2 == '0' and b1 == '1':
+            exponents.append(-2**bit_pos)
+            exponents.append(-2**(bit_pos+1))
+        elif b4 == '1' and b3 == '0' and b2 == '1' and b1 == '0':
+            exponents.append(-2**bit_pos)
+            exponents.append(-2**(bit_pos+1))
+        elif b4 == '1' and b3 == '0' and b2 == '1' and b1 == '1':
+            exponents.append(-2**(bit_pos+1))
+        elif b4 == '1' and b3 == '1' and b2 == '0' and b1 == '0':
+            exponents.append(-2**(bit_pos+1))
+        elif b4 == '1' and b3 == '1' and b2 == '0' and b1 == '1':
+            exponents.append(-2**bit_pos)
+        elif b4 == '1' and b3 == '1' and b2 == '1' and b1 == '0':
+            exponents.append(-2**bit_pos)
+        elif b4 == '1' and b3 == '1' and b2 == '1' and b1 == '1':
+            pass
+
+        bit_pos += 3
+
+    return exponents
 
 def pad_torch_mat(xs, pad_value=0, min_dim=8):
     for i in range(len(xs)):
@@ -49,7 +200,7 @@ def pad_torch_mat(xs, pad_value=0, min_dim=8):
 
 def min_power_rep(max_exp, max_terms):
     from itertools import product
-    sign = lambda x: (1, -1)[x < 0]
+    sign = lambda x: (1, -1)[x <= 0]
     exp_values = [-v for v in range(1, max_exp + 1)] + [v for v in range(1, max_exp + 1)]
     exp_values = sorted(exp_values, key=lambda x: abs(x))
     num_values = 3*2**max_exp 
@@ -60,83 +211,20 @@ def min_power_rep(max_exp, max_terms):
         for terms in product(exp_values, repeat=num_terms):
             rep_value = sum([sign(term)*2**(abs(term) - 1) for term in terms])
             value = rep_value + mid_point
-            if value < num_values and values[value] is None:
-                values[value] = list(terms)[::-1]
+            if value >= 0 and value < num_values:
+                if values[value] is None:
+                    values[value] = list(terms)[::-1]
+                elif len(terms) > len(values[value]):
+                    pass
+                else:
+                    exp_sum = sum([2**(abs(term)-1) for term in terms])
+                    curr_exp_sum = sum([2**(abs(term)-1)for term in values[value]])
+                    if exp_sum > curr_exp_sum:
+                        values[value] = list(terms)[::-1]
+
 
     return values
 
-
-def two_powers(min_exp, max_exp):
-    max_val = 2*2**(max_exp-1)
-    values, value_powers = [], [None for _ in range(max_val*2+1)]
-    for i in range(min_exp, max_exp):
-        for j in range(min_exp, max_exp):
-            v = 2**i + 2**j
-            value_powers[v+max_val] = [i, j]
-            values.append(v)
-
-            v = -2**i + 2**j
-            value_powers[v+max_val] = [-i, j]
-            values.append(v)
-
-            v = 2**i + -2**j
-            value_powers[v+max_val] = [i, -j]
-            values.append(v)
-
-            v = -2**i + -2**j
-            value_powers[v+max_val] = [-i, -j]
-            values.append(v)
-
-    values = sorted(list(set(values)))
-    return values, value_powers
-
-def is_power2(num):
-    return num != 0 and ((num & (num - 1)) == 0)
-
-def get_powers(number, value_powers, max_exp, num_powers=2):
-    if number == 0: return [0]
-    if is_power2(abs(number)): return [int(math.copysign(math.log2(abs(number)), number))]
-    max_val = num_powers*2**(max_exp-1)
-    return value_powers[number + max_val]
-
-def three_powers(min_exp, max_exp):
-    max_val = 3*2**(max_exp-1)
-    values = []
-    values, value_powers = [], [None for _ in range(max_val*2+1)]
-    for i in range(min_exp, max_exp):
-        for j in range(min_exp, max_exp):
-            for k in range(min_exp, max_exp):
-                v = 2**i + 2**j + 2**k
-                value_powers[v+max_val] = [i, j, k]
-                values.append(v)
-
-                v = -2**i + 2**j + 2**k
-                value_powers[v+max_val] = [-i, j, k]
-                values.append(v)
-
-                v = 2**i + 2**j - 2**k
-                value_powers[v+max_val] = [i, j, -k]
-                values.append(v)
-
-                v = -2**i + 2**j - 2**k
-                value_powers[v+max_val] = [-i, j, -k]
-                values.append(v)
-
-                v = 2**i - 2**j + 2**k
-                value_powers[v+max_val] = [i, -j, k]
-                values.append(v)
-
-                v = 2**i - 2**j - 2**k
-                value_powers[v+max_val] = [i, -j, -k]
-                values.append(v)
-
-                v = -2**i - 2**j - 2**k
-                value_powers[v+max_val] = [-i, -j, -k]
-                values.append(v)
-
-    values = values + [-v for v in values] + [0]
-    values = sorted(list(set(values)))
-    return values, value_powers
 
 def booth_quant_map(booth_values, delta, bits):
     booth_values = delta * torch.Tensor(booth_values).float().cuda()
@@ -150,14 +238,26 @@ def booth_quant_map(booth_values, delta, bits):
     return booth_quant_map
 
 class BoothGroupQuant(nn.Module):
-    def __init__(self, sf, group_size, num_max_exp):
+    def __init__(self, sf, group_size, num_exps):
         super(BoothGroupQuant, self).__init__()
         self.sf = sf
         self.group_size = group_size
-        self.num_max_exp = num_max_exp
+        self.num_exps = num_exps
 
     def forward(self, x):
-        return booth_cuda.forward(x, self.sf, self.group_size, self.num_max_exp)
+        return booth_cuda.group(x, self.sf, self.group_size, self.num_exps)
+
+class BoothTopGroupQuant(nn.Module):
+    def __init__(self, sf, group_size, num_values, num_exps):
+        super(BoothTopGroupQuant, self).__init__()
+        self.sf = sf
+        self.group_size = group_size
+        self.num_values = num_values
+        self.num_exps = num_exps
+
+    def forward(self, x):
+        return booth_cuda.top_group(x, self.sf, self.group_size,
+                                    self.num_values, self.num_exps)
 
 class BoothQuant(nn.Module):
     def __init__(self, sf, num_exps=8):
@@ -198,9 +298,19 @@ if __name__=='__main__':
     import torch
     from torch.autograd import Variable
     x = Variable(torch.Tensor(2, 8, 16, 16).uniform_(-1, 1).double().cuda())
-    assert False
     values = min_power_rep(8, 6)
-    values = pad_torch_mat(values, min_dim=6).int().cuda()
+    # values = pad_torch_mat(values, min_dim=6).int().cuda()
+    for i in range(128):
+        binary_values = binary_encode(i)
+        radix_2_values = radix_2(i)
+        radix_4_values = radix_4(i)
+        radix_8_values = radix_8(i)
+        search = values[384+i]
+        print('{}: {}, {}, {}, {}, {}'.format(i, binary_values, radix_2_values, radix_4_values,
+                                              radix_8_values, search))
+        print('{}: {}, {}, {}, {}, {}'.format(i, len(binary_values), len(radix_2_values),
+                                              len(radix_4_values), len(radix_8_values), len(search)))
+    assert False
 
     sf = 2**-6
     assert False

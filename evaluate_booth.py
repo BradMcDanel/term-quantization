@@ -8,6 +8,7 @@ import time
 import warnings
 from collections import OrderedDict
 import pickle
+from itertools import product
 
 import numpy as np
 import torch
@@ -30,7 +31,7 @@ import booth
 import cgm
 import models
 import util
-plt = util.import_plt_settings(local_display=True)
+plt = util.import_plt_settings(local_display=False)
 
 def tune_bn(loader, model, args):
     # switch to train mode (update bn mean/gamma)
@@ -129,39 +130,53 @@ if __name__=='__main__':
         assert False
 
     cudnn.benchmark = True
+    assert False
 
     train_loader, train_sampler, val_loader = util.get_imagenet(args, 'ILSVRC-train-chunk.bin',
                                                                 num_train=8000, num_val=50000)
     # for pretrained resnet
-    def replace_weights(model, weight_exp, terms, group_size, num_keep_terms):
+    def replace_weights(model, weight_exp, terms, group_size, num_keep_terms, mode):
         for layer in model.children():
             if isinstance(layer, nn.Conv2d):
                 C = layer.weight.shape[1]
-                print(C, group_size)
                 single = booth.weight_single_quant(layer.weight.data, 2**weight_exp,
-                                                   terms, num_keep_terms // group_size)
+                                                   terms, num_keep_terms)
                 group = booth.weight_group_quant(layer.weight.data, 2**weight_exp,
                                                  terms, min(C, group_size), num_keep_terms)
-                # print((single.view(-1) - layer.weight.data.view(-1)).abs().sum(),
-                #       (group.view(-1) - layer.weight.data.view(-1)).abs().sum())
                 if layer.kernel_size[0] != 1:
                     continue
                 else:
-                    layer.weight.data = group
+                    if mode == 'data-1' or mode == 'data-2':
+                        layer.weight.data = single
+                    else:
+                        layer.weight.data = group
             else:
-                replace_weights(layer, weight_exp, terms, group_size, num_keep_terms)
+                replace_weights(layer, weight_exp, terms, group_size, num_keep_terms, mode)
 
-    def booth_test(model, weight_exp, data_exp, num_weight_exps, num_data_exps, group_size, terms):
+    def booth_test(model, weight_exp, data_exp, num_weight_exps, num_data_exps,
+                   group_size, terms, mode='weight'):
         model = copy.deepcopy(model)
         model.cuda(0)
 
-        replace_weights(model, weight_exp, terms, group_size, num_weight_exps)
+        replace_weights(model, weight_exp, terms, group_size, num_weight_exps, mode)
 
-        act_layer = nn.Sequential(
-                        nn.ReLU(inplace=True),
-                        booth.BoothQuant(2**data_exp, num_data_exps),
-                        # util.AverageTracker()
-                    )
+        if mode == 'data-1':
+            nv, ne = booth.value_mapping(group_size, num_data_exps)
+            act_layer = nn.Sequential(
+                            nn.ReLU(inplace=True),
+                            booth.BoothTopGroupQuant(2**data_exp, group_size,
+                                                     nv, ne),
+                        )
+        elif mode == 'data-2':
+            act_layer = nn.Sequential(
+                            nn.ReLU(inplace=True),
+                            booth.BoothGroupQuant(2**data_exp, group_size, group_size*num_data_exps),
+                        )
+        else:
+            act_layer = nn.Sequential(
+                            nn.ReLU(inplace=True),
+                            booth.BoothQuant(2**data_exp, num_data_exps),
+                        )
 
         for i in range(len(model.features)):
             if type(model.features[i]) == nn.ReLU:
@@ -177,32 +192,54 @@ if __name__=='__main__':
     values = list(range(-512, 512))
     num_columns = 2
     num_cycles = 2
-    num_data_exp = 4
-    # num_weight_exps = [1, 2, 3, 4]
+    num_data_exps = [2, 3, 4]
+    num_weight_exps = [2]
     # group_sizes = [1, 2, 4, 8, 16, 32]
-    num_weight_exps = [1]
-    group_sizes = [16, 32]
+    group_sizes = [1, 4, 8]
     weight_terms = booth.min_power_rep(8, 6)
     weight_terms = booth.pad_torch_mat(weight_terms, min_dim=6).int().cuda()
     accs = []
-    names = ['G=1', 'G=2', 'G=4', 'G=8', 'G=16', 'G=32']
+    mode = 'data-1'
     for group_size in group_sizes:
         acc_row = [] 
-        for num_weight_exp in num_weight_exps:
-            we = num_weight_exp*group_size
-            qmodel, acc = booth_test(model, -8, -7, we, num_data_exp, group_size, weight_terms)
-            print(group_size, we, acc)
+        for num_weight_exp, num_data_exp in product(num_weight_exps, num_data_exps):
+            if mode == 'weight':
+                we = num_weight_exp*group_size
+                de = num_data_exp
+            else:
+                we = num_weight_exp
+                de = num_data_exp
+            qmodel, acc = booth_test(model, -8, -7, we, de, group_size, weight_terms, mode)
+            print(group_size, we, de, acc.item())
             acc_row.append(acc.item())
         accs.append(acc_row)
     
-    for name, acc_row, group_size in zip(names, accs, group_sizes):
-        plt.plot(num_weight_exps, acc_row, linewidth=2.5, label=name)
+    colors = ['r', 'g', 'b']
+    for i, (acc_row, group_size) in enumerate(zip(accs, group_sizes)):
+        if i == 0:
+            plt.plot(num_data_exps, acc_row, '-o', linewidth=2.5, color=colors[i], label='No Grouping')
+            continue
+        plt.plot(num_data_exps, acc_row, '--o', linewidth=2.5, color=colors[i],
+                 label='Group({})-values'.format(group_size))
+
+
     plt.legend(loc=0)
-    plt.xlabel('Number of Weight Terms')
+    plt.xticks([2, 3, 4])
+    plt.xlabel('Average Number of Data Terms')
     plt.ylabel('Classification Accuracy (%)')
-    plt.yscale('log')
-    plt.savefig('figures/pow2-grouping.png', dpi=300)
+    plt.savefig('figures/pow2-data-grouping.png', dpi=300)
     plt.clf()
+
+    assert False
+    for name, acc_row, group_size in zip(names, accs, group_sizes):
+        plt.plot(num_data_exps, acc_row[1:], linewidth=2.5, label=name)
+    plt.legend(loc=0)
+    plt.xlabel('Average Number of Data Terms')
+    plt.ylabel('Classification Accuracy (%)')
+    plt.ylim((60, 67))
+    plt.savefig('figures/pow2-data-grouping-zoom.png', dpi=300)
+    plt.clf()
+
     assert False
 
     # model.cuda(args.gpu)
