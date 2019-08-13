@@ -14,8 +14,6 @@ import torch
 import torch.nn as nn
 from torch.utils.data.dataset import Dataset
 
-import cgm
-
 def import_plt_settings(local_display=True):
     import matplotlib
     if not local_display:
@@ -363,7 +361,7 @@ class AverageTracker(nn.Module):
 
 def add_average_trackers(model):
     for child_name, child in model.named_children():
-        if isinstance(child, nn.ReLU) or isinstance(child, cgm.CGM):
+        if isinstance(child, nn.ReLU):
             setattr(model, child_name, nn.Sequential(child, AverageTracker()))
         else:
             add_average_trackers(child)

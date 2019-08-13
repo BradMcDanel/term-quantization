@@ -29,7 +29,6 @@ import numpy as np
 import util
 plt = util.import_plt_settings(local_display=False)
 import models
-import cgm
 
 def imshow_save(filename, data, vmax):
     plt.imshow(data, vmin=-vmax, vmax=vmax, cmap='RdBu_r')
@@ -195,27 +194,27 @@ if __name__=='__main__':
 
     # create model
     print("=> creating model '{}'".format(args.arch))
-    model = models.__dict__[args.arch]()
+    model = models.__dict__[args.arch](pretrained=True)
 
     # optionally resume from a checkpoint
-    if os.path.isfile(args.resume):
-        print("=> loading checkpoint '{}'".format(args.resume))
-        checkpoint = torch.load(args.resume)
-        tmp_state_dict = dict(checkpoint['state_dict'])
-        state_dict = {}
-        for key in tmp_state_dict.keys():
-            if 'module.' in key:
-                new_key = key.replace('module.', '')
-            else:
-                new_key = key
-            state_dict[new_key] = tmp_state_dict[key]
-        state_dict = OrderedDict(state_dict)
-        model.load_state_dict(state_dict)
-        print("=> loaded checkpoint '{}' (epoch {})"
-              .format(args.resume, checkpoint['epoch']))
-    else:
-        print("=> no checkpoint found at '{}'".format(args.resume))
-        assert False
+    # if os.path.isfile(args.resume):
+    #     print("=> loading checkpoint '{}'".format(args.resume))
+    #     checkpoint = torch.load(args.resume)
+    #     tmp_state_dict = dict(checkpoint['state_dict'])
+    #     state_dict = {}
+    #     for key in tmp_state_dict.keys():
+    #         if 'module.' in key:
+    #             new_key = key.replace('module.', '')
+    #         else:
+    #             new_key = key
+    #         state_dict[new_key] = tmp_state_dict[key]
+    #     state_dict = OrderedDict(state_dict)
+    #     model.load_state_dict(state_dict)
+    #     print("=> loaded checkpoint '{}' (epoch {})"
+    #           .format(args.resume, checkpoint['epoch']))
+    # else:
+    #     print("=> no checkpoint found at '{}'".format(args.resume))
+    #     assert False
 
     cudnn.benchmark = True
 

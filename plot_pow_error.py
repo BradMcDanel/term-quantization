@@ -4,37 +4,36 @@ import booth
 import util
 plt = util.import_plt_settings(local_display=True)
 
-values = booth.min_power_rep(8, 6)
-values = booth.pad_torch_mat(values, min_dim=6).int().cuda()
+# values = booth.min_power_rep(8, 6)
+# values = booth.pad_torch_mat(values, min_dim=6).int().cuda()
 
-x = torch.load('layer_10_data.pt')[:10000].cuda()
+real_x = torch.load('data/layer_10_data.pt')[:10000].cuda()
 # x = torch.Tensor(10000, 1, 1, 1).normal_(0, 1).cuda()
 # x = torch.Tensor(10000, 1, 1, 1).uniform_(0, 6).cuda()
 sf = 2**-7
 # sf = 2**-4
 
 # clamp x
-x[x < 0] = 0
+# x[x < 0] = 0
 # x[x > 128*sf] = 128*sf
 num_exps = list(range(1, 7))
-names = ['Binary', 'Booth (Radix-2)', 'Booth (Radix-2) Hack',
-         'Booth (Radix-4)', 'Booth (Radix-8)', 'Offline Search']
+names = ['Binary', 'Booth (Radix-2)', 'Booth (Mod. Radix-2)',
+         'Booth (Radix-4)', 'Booth (Radix-8)']
 colors = ['']
 funcs = [
     lambda x, ne: booth.quant(x, sf, ne, 'binary'),
     lambda x, ne: booth.quant(x, sf, ne, 'radix-2'),
-    lambda x, ne: booth.quant(x, sf, ne, 'radix-2-hack'),
+    lambda x, ne: booth.booth_cuda.radix_2_mod(x.view(1,-1, 1, 1), sf, 1, ne).view(-1),
     lambda x, ne: booth.quant(x, sf, ne, 'radix-4'),
     lambda x, ne: booth.quant(x, sf, ne, 'radix-8'),
-    lambda x, ne: booth.weight_single_quant(x, sf, values, ne)
 ]
 
 errors = []
 for func in funcs:
     error_row = []
     for ne in num_exps:
-        xq = func(x, ne)
-        error = (x - xq).abs().sum().item() / x.numel()
+        xq = func(real_x, ne)
+        error = (real_x - xq).abs().sum().item() / real_x.numel()
         error_row.append(error)
     errors.append(error_row)
 

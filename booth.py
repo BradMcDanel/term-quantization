@@ -92,6 +92,44 @@ def radix_2_hack(number):
 
     return keep_exponents
 
+def radix_2_hack2(number):
+    char_number = bin(number).split('b')[1]
+    if bin(number)[0] == '-':
+        sign = -1
+    else:
+        sign = 1
+    char_number = char_number 
+    char_number = char_number[::-1]
+    exponents = []
+    i = len(char_number) - 1
+    while i >= 0:
+        b0 = str(0 if i == 0 else char_number[i-1])
+        b0 = str(b0)
+        b1 = char_number[i]
+        b2 = str(0 if i == len(char_number) - 1 else char_number[i+1])
+
+        if b2 == '0' and b1 == '0' and b0 == '0':
+            pass
+        elif b2 == '0' and b1 == '0' and b0 == '1':
+            pass
+        elif b2 == '0' and b1 == '1' and b0 == '0':
+            exponents.append(sign*2**i)
+            i -= 1
+        elif b2 == '0' and b1 == '1' and b0 == '1':
+            exponents.append(sign*2**(i+1))
+        elif b2 == '1' and b1 == '0' and b0 == '0':
+            pass
+        elif b2 == '1' and b1 == '0' and b0 == '1':
+            pass
+        elif b2 == '1' and b1 == '1' and b0 == '0':
+            exponents.append(-sign*2**i)
+        elif b2 == '1' and b1 == '1' and b0 == '1':
+            pass
+
+        i -= 1
+
+    return exponents
+
 def radix_4(number):
     char_number = bin(number).split('b')[1]
     if bin(number)[0] == '-':
@@ -247,17 +285,15 @@ class BoothGroupQuant(nn.Module):
     def forward(self, x):
         return booth_cuda.group(x, self.sf, self.group_size, self.num_exps)
 
-class BoothTopGroupQuant(nn.Module):
-    def __init__(self, sf, group_size, num_values, num_exps):
-        super(BoothTopGroupQuant, self).__init__()
+class Radix2ModGroup(nn.Module):
+    def __init__(self, sf, group_size, num_exps):
+        super(Radix2ModGroup, self).__init__()
         self.sf = sf
         self.group_size = group_size
-        self.num_values = num_values
         self.num_exps = num_exps
 
     def forward(self, x):
-        return booth_cuda.top_group(x, self.sf, self.group_size,
-                                    self.num_values, self.num_exps)
+        return booth_cuda.radix_2_mod(x, self.sf, self.group_size, self.num_exps)
 
 class BoothQuant(nn.Module):
     def __init__(self, sf, num_exps=8):

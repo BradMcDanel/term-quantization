@@ -1,4 +1,6 @@
 from .alexnet import *
-from .vgg import *
+from .densenet import *
+from .mobilenet import *
 from .resnet import *
 from .shiftnet import *
+from .vgg import *
