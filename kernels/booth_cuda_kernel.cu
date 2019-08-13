@@ -6,7 +6,7 @@
 #include <stdio.h>
 #include <vector>
 
-#define MAX_GROUP_SIZE 32
+#define MAX_GROUP_SIZE 64
 #define MAX_BOOTH_SIZE 31
 #define MAX_VALUES 32
 
