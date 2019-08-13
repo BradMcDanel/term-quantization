@@ -87,7 +87,7 @@ if __name__=='__main__':
 
     name = 'group'
     terms = [8, 16, 24, 32, 40, 48, 56, 64]
-    group_sizes = [16, 16, 16, 16, 16, 16, 16]
+    group_sizes = [16, 16, 16, 16, 16, 16, 16, 16]
     for i, (group_size, term) in enumerate(zip(group_sizes, terms)):
         if i == 0:
             results[name] = {'avg_terms': [], 'acc': []}

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from .utils import load_state_dict_from_url
 
+from copy import deepcopy
 import sys 
 sys.path.append('..')
 
@@ -297,7 +298,7 @@ class ConvertedResNet(nn.Module):
         self.layer4 = convert_sequential(resnet.layer4, w_move_terms, w_move_group,
                                          d_stat_terms, d_stat_group)
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512 * resnet.layer1[0].expansion, resnet.fc.weight.shape[0])
+        self.fc = deepcopy(resnet.fc)
 
     def forward(self, x):
         x = self.conv1(x)
