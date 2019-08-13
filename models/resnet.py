@@ -2,10 +2,16 @@ import torch
 import torch.nn as nn
 from .utils import load_state_dict_from_url
 
+import sys 
+sys.path.append('..')
+
+from util import fuse
+import booth
+
 
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101',
            'resnet152', 'resnext50_32x4d', 'resnext101_32x8d',
-           'wide_resnet50_2', 'wide_resnet101_2']
+           'wide_resnet50_2', 'wide_resnet101_2', 'ConvertedResNet']
 
 
 model_urls = {
@@ -114,6 +120,50 @@ class Bottleneck(nn.Module):
 
         return out
 
+class ConvertedBottleneck(nn.Module):
+    expansion = 4
+    def __init__(self, bottleneck, w_terms, w_groups, d_terms, d_groups):
+        super(ConvertedBottleneck, self).__init__()
+        self.conv1 = fuse(bottleneck.conv1, bottleneck.bn1)
+        layer_group_size = min(self.conv1.weight.shape[1], w_groups)
+        self.conv1.weight.data = booth.booth_cuda.radix_2_mod(self.conv1.weight.data, 2**-15,
+                                                              layer_group_size, w_terms)
+        self.conv2 = fuse(bottleneck.conv2, bottleneck.bn2)
+        layer_group_size = min(self.conv2.weight.shape[1], w_groups)
+        self.conv2.weight.data = booth.booth_cuda.radix_2_mod(self.conv2.weight.data, 2**-15,
+                                                              layer_group_size, w_terms)
+
+        self.conv3 = fuse(bottleneck.conv3, bottleneck.bn3)
+        layer_group_size = min(self.conv3.weight.shape[1], w_groups)
+        self.conv3.weight.data = booth.booth_cuda.radix_2_mod(self.conv3.weight.data, 2**-15,
+                                                              layer_group_size, w_terms)
+
+        self.relu = nn.Sequential(
+            bottleneck.relu,
+            booth.Radix2ModGroup(2**-15, d_groups, d_terms)
+        )
+
+        self.downsample = bottleneck.downsample
+        self.stride = bottleneck.stride
+
+    def forward(self, x):
+        identity = x
+
+        out = self.conv1(x)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.relu(out)
+
+        out = self.conv3(out)
+
+        if self.downsample is not None:
+            identity = self.downsample(x)
+
+        out += identity
+        out = self.relu(out)
+
+        return out
 
 class ResNet(nn.Module):
 
@@ -209,6 +259,61 @@ class ResNet(nn.Module):
 
         return x
 
+def convert_sequential(sequential, w_terms, w_groups, d_terms, d_groups):
+    layers = []
+    for layer in sequential:
+        if isinstance(layer, Bottleneck):
+            layers.append(ConvertedBottleneck(layer, w_terms, w_groups,
+                                              d_terms, d_groups))
+        else:
+            raise NotImplementedError
+
+    return nn.Sequential(*layers)
+
+
+class ConvertedResNet(nn.Module):
+    def __init__(self, resnet, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
+                 d_move_terms, d_move_group, d_stat_terms, d_stat_group,
+                 data_stationary):
+        super(ConvertedResNet, self).__init__()
+        self._norm_layer = resnet._norm_layer
+        self.inplanes = resnet.inplanes
+        self.dilation = resnet.dilation
+        self.groups = resnet.groups
+        self.base_width = resnet.base_width
+        self.conv1 = fuse(resnet.conv1, resnet.bn1)
+        self.relu = nn.Sequential(
+            resnet.relu,
+            booth.Radix2ModGroup(2**-15, d_move_group, d_move_terms)
+        )
+
+        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
+        self.layer1 = convert_sequential(resnet.layer1, w_move_terms, w_move_group,
+                                         d_stat_terms, d_stat_group)
+        self.layer2 = convert_sequential(resnet.layer2, w_move_terms, w_move_group,
+                                         d_stat_terms, d_stat_group)
+        self.layer3 = convert_sequential(resnet.layer3, w_move_terms, w_move_group,
+                                         d_stat_terms, d_stat_group)
+        self.layer4 = convert_sequential(resnet.layer4, w_move_terms, w_move_group,
+                                         d_stat_terms, d_stat_group)
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Linear(512 * resnet.layer1[0].expansion, resnet.fc.weight.shape[0])
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.relu(x)
+        x = self.maxpool(x)
+
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        x = self.fc(x)
+
+        return x
 
 def _resnet(arch, block, layers, pretrained, progress, **kwargs):
     model = ResNet(block, layers, **kwargs)

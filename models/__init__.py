@@ -23,10 +23,13 @@ def convert_model(model, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
                                d_move_terms, d_move_group, d_stat_terms, d_stat_group,
                                data_stationary)
     elif isinstance(model, VGG):
-        print('here')
         return convert_vgg(model, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
                            d_move_terms, d_move_group, d_stat_terms, d_stat_group,
                            data_stationary)
+    elif isinstance(model, ResNet):
+        return ConvertedResNet(model, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
+                               d_move_terms, d_move_group, d_stat_terms, d_stat_group,
+                               data_stationary)
     
     raise KeyError('Model: {} not found.', model.__class__.__name__)
 
