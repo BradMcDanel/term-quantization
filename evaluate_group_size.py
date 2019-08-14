@@ -67,7 +67,7 @@ if __name__=='__main__':
                                                                 num_train=1000, num_val=50000)
 
     results = {}
-    avg_terms = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
+    avg_terms = [1.0, 1.5, 2.0, 2.5, 3.0]
     group_sizes = [1, 2, 4, 8, 16]
     for group_size in group_sizes:
         name = str(group_size)
