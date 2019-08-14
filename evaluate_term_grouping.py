@@ -64,7 +64,7 @@ if __name__=='__main__':
     model = models.__dict__[args.arch](pretrained=True)
     model.cuda()
     train_loader, train_sampler, val_loader = util.get_imagenet(args, 'ILSVRC-train-chunk.bin',
-                                                                num_train=1000, num_val=50000)
+                                                                num_train=1000, num_val=500)
 
     results = {}
 
@@ -76,7 +76,7 @@ if __name__=='__main__':
             results[name] = {'avg_terms': [], 'acc': []}
 
         qmodel = models.convert_model(model, term, group_size, term, group_size,
-                                      term, group_size, term, group_size, 100)
+                                      term, group_size, term, group_size, 50000)
         criterion = nn.CrossEntropyLoss().cuda()
         qmodel = torch.nn.DataParallel(qmodel).cuda()
         _, acc = util.validate(val_loader, qmodel, criterion, args, verbose=False)

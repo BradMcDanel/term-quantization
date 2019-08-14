@@ -174,48 +174,7 @@ parser.add_argument('--multiprocessing-distributed', action='store_true',
 
 if __name__=='__main__':
     args = parser.parse_args()
-
-    if args.seed is not None:
-        random.seed(args.seed)
-        torch.manual_seed(args.seed)
-        cudnn.deterministic = True
-        warnings.warn('You have chosen to seed training. '
-                      'This will turn on the CUDNN deterministic setting, '
-                      'which can slow down your training considerably! '
-                      'You may see unexpected behavior when restarting '
-                      'from checkpoints.')
-
-    if args.dist_url == "env://" and args.world_size == -1:
-        args.world_size = int(os.environ["WORLD_SIZE"])
-
-    args.distributed = args.world_size > 1 or args.multiprocessing_distributed
-
-    ngpus_per_node = torch.cuda.device_count()
-
-    # create model
-    print("=> creating model '{}'".format(args.arch))
     model = models.__dict__[args.arch](pretrained=True)
-
-    # optionally resume from a checkpoint
-    # if os.path.isfile(args.resume):
-    #     print("=> loading checkpoint '{}'".format(args.resume))
-    #     checkpoint = torch.load(args.resume)
-    #     tmp_state_dict = dict(checkpoint['state_dict'])
-    #     state_dict = {}
-    #     for key in tmp_state_dict.keys():
-    #         if 'module.' in key:
-    #             new_key = key.replace('module.', '')
-    #         else:
-    #             new_key = key
-    #         state_dict[new_key] = tmp_state_dict[key]
-    #     state_dict = OrderedDict(state_dict)
-    #     model.load_state_dict(state_dict)
-    #     print("=> loaded checkpoint '{}' (epoch {})"
-    #           .format(args.resume, checkpoint['epoch']))
-    # else:
-    #     print("=> no checkpoint found at '{}'".format(args.resume))
-    #     assert False
-
     cudnn.benchmark = True
 
     train_loader, train_sampler, val_loader = util.get_imagenet(args, 'ILSVRC-train-chunk.bin',
