@@ -196,9 +196,10 @@ def convert_vgg(model, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
             if isinstance(layer, nn.Conv2d):
                 layer = fuse(layer, model.features[i+1])
                 if curr_layer < data_stationary: 
-                    layer_group_size = min(layer.weight.shape[1], w_stat_group)
-                    layer.weight.data = booth.booth_cuda.radix_2_mod(layer.weight.data, 2**-15,
-                                                                     layer_group_size, w_stat_terms)
+                    # ignore first layer (usually smaller than group size)
+                    if layer.weight.shape[1] > 3:
+                        layer.weight.data = booth.booth_cuda.radix_2_mod(layer.weight.data, 2**-15,
+                                                                         w_stat_group, w_stat_terms)
                 else:
                     layer.weight.data = booth.booth_cuda.radix_2_mod(layer.weight.data, 2**-15,
                                                                      w_move_group, w_move_terms)

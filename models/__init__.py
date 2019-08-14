@@ -32,6 +32,3 @@ def convert_model(model, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
                                data_stationary)
     
     raise KeyError('Model: {} not found.', model.__class__.__name__)
-
-
-                

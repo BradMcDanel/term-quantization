@@ -130,6 +130,45 @@ def radix_2_hack2(number):
 
     return exponents
 
+def radix_2_hack3(number):
+    char_number = bin(number).split('b')[1]
+    if bin(number)[0] == '-':
+        sign = -1
+    else:
+        sign = 1
+    char_number = char_number 
+    char_number = char_number[::-1]
+    exponents = []
+    i = 0
+    while i < len(char_number):
+        b0 = str(0 if i == 0 else char_number[i-1])
+        b0 = str(b0)
+        b1 = char_number[i]
+        b2 = str(0 if i == len(char_number) - 1 else char_number[i+1])
+
+        if b2 == '0' and b1 == '0' and b0 == '0':
+            pass
+        elif b2 == '0' and b1 == '0' and b0 == '1':
+            pass
+        elif b2 == '0' and b1 == '1' and b0 == '0':
+            exponents.append(sign*2**i)
+            i += 1
+        elif b2 == '0' and b1 == '1' and b0 == '1':
+            exponents.append(sign*2**(i+1))
+        elif b2 == '1' and b1 == '0' and b0 == '0':
+            pass
+        elif b2 == '1' and b1 == '0' and b0 == '1':
+            pass
+        elif b2 == '1' and b1 == '1' and b0 == '0':
+            exponents.append(-sign*2**i)
+        elif b2 == '1' and b1 == '1' and b0 == '1':
+            pass
+
+        i += 1
+        print(i)
+
+    return exponents
+
 def radix_4(number):
     char_number = bin(number).split('b')[1]
     if bin(number)[0] == '-':
