@@ -85,7 +85,6 @@ if __name__=='__main__':
             results[name]['avg_terms'].append(term / group_size)
             results[name]['acc'].append(acc)
             print(group_size, term, acc, term / group_size)
-            print(group_size, term, term / group_size)
 
     with open('data/{}-group-results.txt'.format(args.arch), 'w') as fp:
         json.dump(results, fp)
