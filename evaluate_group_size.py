@@ -76,8 +76,9 @@ if __name__=='__main__':
             if group_size == 1 and not avg_term.is_integer():
                 continue
             term = int(group_size * avg_term)
-            qmodel = models.convert_model(model, term, group_size, term, group_size,
-                                          term, group_size, term, group_size, 100)
+            qmodel = models.convert_model(model, 3, 1, term, group_size,
+                                          3, 1, term, group_size,
+                                          models.data_stationary_point(model))
             criterion = nn.CrossEntropyLoss().cuda()
             qmodel = torch.nn.DataParallel(qmodel).cuda()
             _, acc = util.validate(val_loader, qmodel, criterion, args, verbose=False)
