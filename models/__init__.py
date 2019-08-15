@@ -41,6 +41,6 @@ def data_stationary_point(model):
     elif isinstance(model, VGG):
         return 12
     elif isinstance(model, ResNet):
-        return 25
+        return 16
 
     raise KeyError('Model: {} not found.', model.__class__.__name__)

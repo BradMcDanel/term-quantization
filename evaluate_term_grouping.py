@@ -64,7 +64,7 @@ if __name__=='__main__':
     model = models.__dict__[args.arch](pretrained=True)
     model.cuda()
     train_loader, train_sampler, val_loader = util.get_imagenet(args, 'ILSVRC-train-chunk.bin',
-                                                                num_train=1000, num_val=50000)
+                                                                num_train=1000, num_val=500)
 
     results = {}
 
