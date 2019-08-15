@@ -68,6 +68,38 @@ class InvertedResidual(nn.Module):
         else:
             return self.conv(x)
 
+class ConvertedInvertedResidual(nn.Module):
+    def __init__(self, invres, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
+                 d_move_terms, d_move_group, d_stat_terms, d_stat_group, is_data_stat):
+
+        super(ConvertedInvertedResidual, self).__init__()
+        self.stride = stride
+        assert stride in [1, 2]
+
+        hidden_dim = int(round(inp * expand_ratio))
+        self.use_res_connect = self.stride == 1 and inp == oup
+
+        layers = []
+        if expand_ratio != 1:
+            # pw
+            layers.append(ConvBNReLU(inp, hidden_dim, kernel_size=1))
+        layers.extend([
+            # dw
+            ConvBNReLU(hidden_dim, hidden_dim, stride=stride, groups=hidden_dim),
+            # pw-linear
+            nn.Conv2d(hidden_dim, oup, 1, 1, 0, bias=False),
+            nn.BatchNorm2d(oup),
+        ])
+        self.conv = nn.Sequential(*layers)
+
+    def forward(self, x):
+        if self.use_res_connect:
+            return x + self.conv(x)
+        else:
+            return self.conv(x)
+
+
+
 
 class MobileNetV2(nn.Module):
     def __init__(self, num_classes=1000, width_mult=1.0, inverted_residual_setting=None, round_nearest=8):
@@ -144,6 +176,63 @@ class MobileNetV2(nn.Module):
         x = self.classifier(x)
         return x
 
+class ConvertedMobileNetV2(nn.Module):
+    def __init__(self, mobilenet, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
+                 d_move_terms, d_move_group, d_stat_terms, d_stat_group,
+                 data_stationary):
+        super(ConvertedMobileNetV2, self).__init__()
+
+        layers = []
+        num_layers = 0
+        for i, layer in enumerate(mobilenet.features):
+            if isinstance(layer, InvertedResidual):
+                is_data_stat = num_layers > data_stationary
+                qlayer = ConvertedInvertedResidual(layer, w_move_terms, w_move_group,
+                                                   w_stat_terms, w_stat_group,
+                                                   d_move_terms, d_move_group,
+                                                   d_stat_terms, d_stat_group, is_data_stat)
+
+
+        # building first layer
+        input_channel = _make_divisible(input_channel * width_mult, round_nearest)
+        self.last_channel = _make_divisible(last_channel * max(1.0, width_mult), round_nearest)
+        features = [ConvBNReLU(3, input_channel, stride=2)]
+        # building inverted residual blocks
+        for t, c, n, s in inverted_residual_setting:
+            output_channel = _make_divisible(c * width_mult, round_nearest)
+            for i in range(n):
+                stride = s if i == 0 else 1
+                features.append(block(input_channel, output_channel, stride, expand_ratio=t))
+                input_channel = output_channel
+        # building last several layers
+        features.append(ConvBNReLU(input_channel, self.last_channel, kernel_size=1))
+        # make it nn.Sequential
+        self.features = nn.Sequential(*features)
+
+        # building classifier
+        self.classifier = nn.Sequential(
+            nn.Dropout(0.2),
+            nn.Linear(self.last_channel, num_classes),
+        )
+
+        # weight initialization
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out')
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.BatchNorm2d):
+                nn.init.ones_(m.weight)
+                nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.Linear):
+                nn.init.normal_(m.weight, 0, 0.01)
+                nn.init.zeros_(m.bias)
+
+    def forward(self, x):
+        x = self.features(x)
+        x = x.mean([2, 3])
+        x = self.classifier(x)
+        return x
 
 def mobilenet_v2(pretrained=False, progress=True, **kwargs):
     """

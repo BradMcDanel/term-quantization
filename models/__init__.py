@@ -43,6 +43,19 @@ def convert_value_model(model, w_move_terms, w_move_group, w_stat_values, w_stat
         return convert_value_shiftnet19(model, w_move_terms, w_move_group, w_stat_values,
                                         w_stat_group, d_move_terms, d_move_group,
                                         d_stat_values, d_stat_group, data_stationary)
+    elif isinstance(model, AlexNet):
+        return convert_value_alexnet(model, w_move_terms, w_move_group, w_stat_values,
+                                     w_stat_group, d_move_terms, d_move_group,
+                                     d_stat_values, d_stat_group, data_stationary)
+    elif isinstance(model, VGG):
+        return convert_value_vgg(model, w_move_terms, w_move_group, w_stat_values,
+                                 w_stat_group, d_move_terms, d_move_group,
+                                 d_stat_values, d_stat_group, data_stationary)
+    elif isinstance(model, ResNet):
+        return ConvertedValueResNet(model, w_move_terms, w_move_group, w_stat_values,
+                                    w_stat_group, d_move_terms, d_move_group,
+                                    d_stat_values, d_stat_group, data_stationary)
+
 
     raise KeyError('Model: {} not found.', model.__class__.__name__)
 

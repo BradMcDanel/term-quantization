@@ -10,7 +10,7 @@ import booth
 
 __all__ = [
     'VGG', 'vgg11', 'vgg11_bn', 'vgg13', 'vgg13_bn', 'vgg16', 'vgg16_bn',
-    'vgg19_bn', 'vgg19', 'convert_vgg',
+    'vgg19_bn', 'vgg19', 'convert_vgg', 'convert_value_vgg',
 ]
 
 
@@ -215,6 +215,45 @@ def convert_vgg(model, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
                     layer = nn.Sequential(
                             nn.ReLU(inplace=True),
                             booth.Radix2ModGroup(2**-15, d_stat_group, d_stat_terms),
+                        )
+ 
+            if not isinstance(layer, nn.BatchNorm2d):
+                layers.append(layer)
+
+            if isinstance(layer, nn.Conv2d):
+                curr_layer += 1
+        model.features = nn.Sequential(*layers)
+
+        return model
+
+def convert_value_vgg(model, w_move_terms, w_move_group, w_stat_values, w_stat_group,
+                      d_move_terms, d_move_group, d_stat_values, d_stat_group,
+                      data_stationary):
+        layers = []
+        curr_layer = 0
+        for i, layer in enumerate(model.features):
+            if isinstance(layer, nn.Conv2d):
+                layer = fuse(layer, model.features[i+1])
+                if curr_layer < data_stationary: 
+                    # ignore first layer (usually smaller than group size)
+                    if layer.weight.shape[1] > 3:
+                        layer.weight.data = booth.booth_cuda.value_group(layer.weight.data,
+                                                                         w_stat_group, w_stat_values)
+                else:
+                    layer.weight.data = booth.booth_cuda.radix_2_mod(layer.weight.data, 2**-15,
+                                                                     w_move_group, w_move_terms)
+            elif isinstance(layer, nn.ReLU):
+                if i == len(model.features) - 1:
+                    pass
+                elif curr_layer < data_stationary:
+                    layer = nn.Sequential(
+                            nn.ReLU(inplace=True),
+                            booth.Radix2ModGroup(2**-15, d_move_group, d_move_terms),
+                        )
+                else:
+                    layer = nn.Sequential(
+                            nn.ReLU(inplace=True),
+                            booth.ValueGroup(d_stat_group, d_stat_values),
                         )
  
             if not isinstance(layer, nn.BatchNorm2d):
