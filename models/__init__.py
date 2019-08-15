@@ -32,3 +32,15 @@ def convert_model(model, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
                                data_stationary)
     
     raise KeyError('Model: {} not found.', model.__class__.__name__)
+
+def data_stationary_point(model):
+    if isinstance(model, ShiftNet):
+        return 12
+    elif isinstance(model, AlexNet):
+        return 6
+    elif isinstance(model, VGG):
+        return 12
+    elif isinstance(model, ResNet):
+        return 25
+
+    raise KeyError('Model: {} not found.', model.__class__.__name__)

@@ -76,7 +76,7 @@ if __name__=='__main__':
             results[name] = {'avg_terms': [], 'acc': []}
 
         qmodel = models.convert_model(model, term, group_size, term, group_size,
-                                      term, group_size, term, group_size, 50000)
+                                      term, group_size, term, group_size, 500)
         criterion = nn.CrossEntropyLoss().cuda()
         qmodel = torch.nn.DataParallel(qmodel).cuda()
         _, acc = util.validate(val_loader, qmodel, criterion, args, verbose=False)
@@ -92,8 +92,8 @@ if __name__=='__main__':
         if i == 0:
             results[name] = {'avg_terms': [], 'acc': []}
 
-        qmodel = models.convert_model(model, term, group_size, term, group_size,
-                                      term, group_size, term, group_size, 100)
+        qmodel = models.convert_model(model, 4, 1, term, group_size, 4, 1, term,
+                                      group_size, models.data_stationary_point(model))
         criterion = nn.CrossEntropyLoss().cuda()
         qmodel = torch.nn.DataParallel(qmodel).cuda()
         _, acc = util.validate(val_loader, qmodel, criterion, args, verbose=False)
@@ -102,5 +102,6 @@ if __name__=='__main__':
         results[name]['acc'].append(acc)
         print(group_size, term, acc, term / group_size)
 
+    assert False
     with open('data/{}-results.txt'.format(args.arch), 'w') as fp:
         json.dump(results, fp)
