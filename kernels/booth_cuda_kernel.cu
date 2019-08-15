@@ -144,10 +144,45 @@ __global__ void radix_2_mod_cuda_kernel(const scalar_t *__restrict__ input,
       gidx = (c * group_size + i) * WH + base_offset;
       int32_t sign = input[gidx] < 0 ? -1 : 1;
       output[gidx] *= sf;
-      // output[gidx] *= -sign;
     }
   }
 }
+
+template <typename scalar_t>
+__global__ void
+value_group_cuda_kernel(const scalar_t *__restrict__ input,
+                        scalar_t *__restrict__ output, const int32_t group_size,
+                        const int32_t num_keep_values, const int32_t B,
+                        const int32_t C, const int32_t W, const int32_t H) {
+  const int32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  const int32_t size = B * C * W * H;
+  const int32_t CWH = C * W * H;
+  const int32_t WH = W * H;
+  const int32_t b = idx / CWH;
+  const int32_t c = (idx - b * CWH) / WH;
+  const int32_t w = (idx - b * CWH - c * WH) / W;
+  const int32_t h = idx - b * CWH - c * WH - w * H;
+  const int32_t base_offset = b * CWH + w * W + h;
+  int32_t gidx;
+
+  if (c < (C / group_size)) {
+    gidx = c * group_size * WH + base_offset;
+    int32_t group_max_idx = -1;
+    scalar_t group_max_val = 0;
+    for (int i = 0; i < group_size; ++i) {
+      gidx = (c * group_size + i) * WH + base_offset;
+      if (abs(input[gidx]) > abs(group_max_val)) {
+        group_max_idx = i;
+        group_max_val = input[gidx];
+      }
+    }
+    if (group_max_idx != -1) {
+      gidx = (c * group_size + group_max_idx) * WH + base_offset;
+      output[gidx] = group_max_val;
+    }
+  }
+}
+
 
 
 template <typename scalar_t>
@@ -415,7 +450,31 @@ at::Tensor radix_2_mod_cuda(const at::Tensor input, const float sf,
   return output;
 }
 
+at::Tensor value_group_cuda(const at::Tensor input, const int32_t group_size,
+                            const int32_t num_keep_values) {
+  const auto ndim = input.ndimension();
+  const auto B = input.size(0);
+  const auto C = input.size(1);
+  auto W = 1;
+  auto H = 1;
+  if (ndim == 4) {
+    W = input.size(2);
+    H = input.size(3);
+  }
+  const auto size = B * C * W * H;
+  const int threads = 128;
+  const int blocks = (size + threads - 1) / threads;
+  auto output = at::zeros_like(input);
 
+  AT_DISPATCH_FLOATING_TYPES(input.type(), "value_group_cuda", ([&] {
+                               value_group_cuda_kernel<scalar_t><<<blocks, threads>>>(
+                                   input.data<scalar_t>(),
+                                   output.data<scalar_t>(), group_size,
+                                   num_keep_values, B, C, W, H);
+                             }));
+
+  return output;
+}
 
 at::Tensor single_cuda(const at::Tensor input, const float sf,
                        const int32_t num_keep_terms) {

@@ -6,6 +6,9 @@
 at::Tensor radix_2_mod_cuda(const at::Tensor input,  const float sf,
                             const int32_t group_size, const int32_t num_keep_terms);
 
+at::Tensor value_group_cuda(const at::Tensor input, const int32_t group_size,
+                            const int32_t num_keep_values);
+
 at::Tensor single_cuda(const at::Tensor input, const float sf,
                        const int32_t num_keep_terms);
 
@@ -37,6 +40,12 @@ at::Tensor radix_2_mod(const at::Tensor input, const float sf,
                        const int32_t group_size, const int32_t num_keep_terms) {
   CHECK_INPUT(input);
   return radix_2_mod_cuda(input, sf, group_size, num_keep_terms);
+}
+
+at::Tensor value_group(const at::Tensor input, const int32_t group_size,
+                       const int32_t num_keep_values) {
+  CHECK_INPUT(input);
+  return value_group_cuda(input, group_size, num_keep_values);
 }
 
 at::Tensor single(const at::Tensor input, const float sf,
@@ -74,6 +83,7 @@ at::Tensor weight_group(const at::Tensor input, const at::Tensor terms, const fl
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("radix_2_mod", &radix_2_mod, "Booth (Modified Radix-2) (CUDA)");
+  m.def("value_group", &value_group, "Value Grouping (CUDA)");
   m.def("single", &single, "Booth single (CUDA)");
   m.def("group", &group, "Booth group (CUDA)");
   m.def("top_group", &top_group, "Top-k values Booth group (CUDA)");

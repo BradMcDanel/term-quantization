@@ -3,9 +3,9 @@ import json
 import util
 plt = util.import_plt_settings(local_display=True)
 
-names = ['alexnet', 'vgg19_bn', 'shiftnet19']
-fancy_names = {'fixed': 'Truncated', 'group': 'Group-16', 'alexnet': 'AlexNet', 'vgg19_bn': 'VGG-19',
-               'shiftnet19': 'ShiftNet-19', 'resnet50': 'ResNet-50'}
+names = ['shiftnet19', 'vgg19_bn', 'resnet152']
+fancy_names = {'fixed': 'Truncated', 'group': 'Term Reveal', 'alexnet': 'AlexNet', 'vgg19_bn': 'VGG-19',
+               'shiftnet19': 'ShiftNet-19', 'resnet152': 'ResNet-152'}
 
 colors = {
     'alexnet-fixed': 'b',
@@ -14,8 +14,8 @@ colors = {
     'vgg19_bn-group': util.lighten_color('r', 0.6),
     'shiftnet19-fixed': 'g',
     'shiftnet19-group': util.lighten_color('g', 0.8),
-    'resnet50-fixed': 'k',
-    'resnet50-group': util.lighten_color('k', 0.8),
+    'resnet152-fixed': 'b',
+    'resnet152-group': util.lighten_color('b', 0.4),
 }
 
 line_styles = {
@@ -25,8 +25,8 @@ line_styles = {
     'vgg19_bn-group': '--',
     'shiftnet19-fixed': '-',
     'shiftnet19-group': '--',
-    'resnet50-fixed': '-',
-    'resnet50-group': '--',
+    'resnet152-fixed': '-',
+    'resnet152-group': '--',
 }
 
 plt.figure(figsize=(6.5, 4.5))

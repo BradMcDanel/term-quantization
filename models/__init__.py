@@ -33,6 +33,19 @@ def convert_model(model, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
     
     raise KeyError('Model: {} not found.', model.__class__.__name__)
 
+def convert_value_model(model, w_move_terms, w_move_group, w_stat_values, w_stat_group,
+                        d_move_terms, d_move_group, d_stat_values, d_stat_group,
+                        data_stationary):
+    # copy the model, since we modify it internally
+    model = deepcopy(model)
+
+    if isinstance(model, ShiftNet):
+        return convert_value_shiftnet19(model, w_move_terms, w_move_group, w_stat_values,
+                                        w_stat_group, d_move_terms, d_move_group,
+                                        d_stat_values, d_stat_group, data_stationary)
+
+    raise KeyError('Model: {} not found.', model.__class__.__name__)
+
 def data_stationary_point(model):
     if isinstance(model, ShiftNet):
         return 12

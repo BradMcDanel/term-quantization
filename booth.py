@@ -3,6 +3,7 @@ import math
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.utils.cpp_extension import load
 
 booth_cuda = load(
@@ -333,6 +334,18 @@ class Radix2ModGroup(nn.Module):
 
     def forward(self, x):
         return booth_cuda.radix_2_mod(x, self.sf, self.group_size, self.num_exps)
+
+class ValueGroup(nn.Module):
+    def __init__(self, group_size, num_values):
+        super(ValueGroup, self).__init__()
+        self.group_size = group_size
+        self.num_values = num_values
+
+    def forward(self, x):
+        # as this is applied to data, only want positive values
+        x = F.relu(x) 
+
+        return booth_cuda.value_group(x, self.group_size, self.num_values)
 
 class BoothQuant(nn.Module):
     def __init__(self, sf, num_exps=8):
