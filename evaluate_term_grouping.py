@@ -69,14 +69,15 @@ if __name__=='__main__':
     results = {}
 
     name = 'fixed'
-    terms = [1, 2, 3, 4]
-    group_sizes = [1, 1, 1, 1]
+    terms = [1, 2, 3]
+    group_sizes = [1, 1, 1]
     for i, (group_size, term) in enumerate(zip(group_sizes, terms)):
         if i == 0:
             results[name] = {'avg_terms': [], 'acc': []}
 
         qmodel = models.convert_model(model, term, group_size, term, group_size,
-                                      term, group_size, term, group_size, 500)
+                                      term, group_size, term, group_size,
+                                      models.data_stationary_point(model))
         criterion = nn.CrossEntropyLoss().cuda()
         qmodel = torch.nn.DataParallel(qmodel).cuda()
         _, acc = util.validate(val_loader, qmodel, criterion, args, verbose=False)
@@ -86,8 +87,8 @@ if __name__=='__main__':
         print(group_size, term, acc, term / group_size)
 
     name = 'group'
-    terms = [8, 16, 24, 32, 40, 48, 56, 64]
-    group_sizes = [16, 16, 16, 16, 16, 16, 16, 16]
+    terms = [2, 4, 6, 8, 10, 12]
+    group_sizes = [4, 4, 4, 4, 4, 4]
     for i, (group_size, term) in enumerate(zip(group_sizes, terms)):
         if i == 0:
             results[name] = {'avg_terms': [], 'acc': []}
