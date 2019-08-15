@@ -52,7 +52,7 @@ for name in names:
 plt.legend(loc=0)
 plt.tight_layout()
 plt.title('Comparing Term Revealing to Truncation')
-plt.xlabel('Average Number of Terms')
+plt.xlabel(r'Average Number of Terms ($\alpha$)')
 plt.ylabel('ImageNet Top-1 Accuracy')
 plt.savefig('figures/model-accuracy.pdf', dpi=300, bbox_inches='tight')
 plt.clf()
