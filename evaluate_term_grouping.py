@@ -64,7 +64,7 @@ if __name__=='__main__':
     model = models.__dict__[args.arch](pretrained=True)
     model.cuda()
     train_loader, train_sampler, val_loader = util.get_imagenet(args, 'ILSVRC-train-chunk.bin',
-                                                                num_train=1000, num_val=500)
+                                                                num_train=1000, num_val=50000)
 
     results = {}
 
@@ -102,6 +102,5 @@ if __name__=='__main__':
         results[name]['acc'].append(acc)
         print(group_size, term, acc, term / group_size)
 
-    assert False
     with open('data/{}-results.txt'.format(args.arch), 'w') as fp:
         json.dump(results, fp)
