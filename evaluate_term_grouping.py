@@ -92,7 +92,7 @@ if __name__=='__main__':
         if i == 0:
             results[name] = {'avg_terms': [], 'acc': []}
 
-        qmodel = models.convert_model(model, 4, 1, term, group_size, 4, 1, term,
+        qmodel = models.convert_model(model, 3, 1, term, group_size, 3, 1, term,
                                       group_size, models.data_stationary_point(model))
         criterion = nn.CrossEntropyLoss().cuda()
         qmodel = torch.nn.DataParallel(qmodel).cuda()
