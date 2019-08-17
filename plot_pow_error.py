@@ -8,11 +8,9 @@ real_x = torch.load('data/layer_10_data.pt')[:10000].cuda()
 sf = 2**-7
 x = sf * torch.clamp(torch.floor((real_x / sf) + 0.5), -128, 128) 
 
-assert False
-
 num_exps = list(range(1, 6))
 names = ['Binary', 'Booth (Radix-2)', 'Booth (Radix-4)',
-         'Booth (Radix-8)', 'Shortened Radix-2',]
+         'Booth (Radix-8)', 'HESE',]
 colors = ['']
 funcs = [
     lambda x, ne: booth.quant(x, sf, ne, 'binary'),
