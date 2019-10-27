@@ -3,6 +3,9 @@
 #include <vector>
 
 // CUDA forward declarations
+at::Tensor binary_cuda(const at::Tensor input,  const float sf,
+                       const int32_t group_size, const int32_t num_keep_terms);
+
 at::Tensor radix_2_mod_cuda(const at::Tensor input,  const float sf,
                             const int32_t group_size, const int32_t num_keep_terms);
 
@@ -35,6 +38,12 @@ at::Tensor top_group_cuda(const at::Tensor input, const float sf,
 #define CHECK_INPUT(x)                                                         \
   CHECK_CUDA(x);                                                               \
   CHECK_CONTIGUOUS(x)
+
+at::Tensor binary(const at::Tensor input, const float sf,
+                  const int32_t group_size, const int32_t num_keep_terms) {
+  CHECK_INPUT(input);
+  return binary_cuda(input, sf, group_size, num_keep_terms);
+}
 
 at::Tensor radix_2_mod(const at::Tensor input, const float sf,
                        const int32_t group_size, const int32_t num_keep_terms) {
@@ -82,6 +91,7 @@ at::Tensor weight_group(const at::Tensor input, const at::Tensor terms, const fl
 }
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+  m.def("binary", &binary, "Binary Term Revealing (CUDA)");
   m.def("radix_2_mod", &radix_2_mod, "Booth (Modified Radix-2) (CUDA)");
   m.def("value_group", &value_group, "Value Grouping (CUDA)");
   m.def("single", &single, "Booth single (CUDA)");

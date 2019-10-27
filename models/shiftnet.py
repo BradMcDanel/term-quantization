@@ -86,7 +86,7 @@ def shiftnet19(pretrained=False, progress=True):
 
     return model
 
-def convert_shiftnet19(model, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
+def convert_shiftnet19(model, w_sfs, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
                        d_move_terms, d_move_group, d_stat_terms, d_stat_group,
                        data_stationary):
         layers = []
@@ -97,10 +97,10 @@ def convert_shiftnet19(model, w_move_terms, w_move_group, w_stat_terms, w_stat_g
                 if curr_layer < data_stationary: 
                     # ignore first layer (usually smaller than group size)
                     if layer.weight.shape[1] > 3:
-                        layer.weight.data = booth.booth_cuda.radix_2_mod(layer.weight.data, 2**-15,
+                        layer.weight.data = booth.booth_cuda.radix_2_mod(layer.weight.data, w_sfs[curr_layer],
                                                                          w_stat_group, w_stat_terms)
                 else:
-                    layer.weight.data = booth.booth_cuda.radix_2_mod(layer.weight.data, 2**-15,
+                    layer.weight.data = booth.booth_cuda.radix_2_mod(layer.weight.data, w_sfs[curr_layer],
                                                                      w_move_group, w_move_terms)
             elif isinstance(layer, nn.ReLU):
                 if i == len(model.features) - 1:
@@ -108,12 +108,12 @@ def convert_shiftnet19(model, w_move_terms, w_move_group, w_stat_terms, w_stat_g
                 elif curr_layer < data_stationary:
                     layer = nn.Sequential(
                             nn.ReLU(inplace=True),
-                            booth.Radix2ModGroup(2**-15, d_move_group, d_move_terms),
+                            booth.Radix2ModGroup(2**-7, d_move_group, d_move_terms),
                         )
                 else:
                     layer = nn.Sequential(
                             nn.ReLU(inplace=True),
-                            booth.Radix2ModGroup(2**-15, d_stat_group, d_stat_terms),
+                            booth.Radix2ModGroup(2**-7, d_stat_group, d_stat_terms),
                         )
  
             if not isinstance(layer, nn.BatchNorm2d):

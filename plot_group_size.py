@@ -35,7 +35,7 @@ line_styles = {
     '16': '-',
 }
 
-plt.figure(figsize=(4.5, 4.5))
+plt.figure(figsize=(7, 4.5))
 with open('data/vgg19_bn-group-results.txt', 'r') as fp:
     model_results = json.load(fp)
 
@@ -48,16 +48,17 @@ for key, value in model_results.items():
         if  term <= 3:
             terms.append(term)
             accs.append(acc)
-    plt.plot(terms, accs, '-o', linewidth=2, ms=8, color=color,
+    plt.plot(terms, accs, '-o', linewidth=4, ms=10, color=color,
                 linestyle=linestyle,
                 markeredgecolor='k', markeredgewidth=0.8, label=label)
 
 
 plt.legend(loc=0)
 plt.tight_layout()
-plt.title(r'(a) Impact of Group Size $g$')
+plt.title(r'Impact of Group Size $g$')
 plt.xticks(terms)
 plt.xlabel(r'Average Number of Terms $\alpha$')
 plt.ylabel('ImageNet Top-1 Accuracy')
+# plt.savefig('figures/group-size-accuracy.pdf', dpi=300, bbox_inches='tight')
 plt.savefig('figures/group-size-accuracy.pdf', dpi=300, bbox_inches='tight')
 plt.clf()

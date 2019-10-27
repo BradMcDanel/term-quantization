@@ -12,7 +12,10 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torch
 import torch.nn as nn
+import numpy as np
 from torch.utils.data.dataset import Dataset
+from q_utils import *
+from shift import Shift
 
 def fuse(conv, bn):
     w = conv.weight
@@ -403,7 +406,7 @@ class AverageTracker(nn.Module):
 
 def add_average_trackers(model):
     for child_name, child in model.named_children():
-        if isinstance(child, nn.ReLU):
+        if isinstance(child, Shift):
             setattr(model, child_name, nn.Sequential(child, AverageTracker()))
         else:
             add_average_trackers(child)
@@ -418,3 +421,53 @@ def get_average_trackers(model):
             average_trackers.extend(trackers)
     
     return average_trackers
+
+
+def quantize_layer(layer, bits):
+    w = layer.weight.data.view(-1).numpy()
+    alpha = find_clip_mmse(w, bits)
+    sf = 1.0 / symmetric_linear_quantization_scale_factor(bits, alpha)
+    w = distiller_quantize(w, bits, alpha)
+    w = torch.from_numpy(w).view_as(layer.weight.data)
+    layer.weight.data = w   
+    return sf
+
+def quantize_layers(model, bits):
+    sfs = []
+    for layer in get_layers(model, [nn.Conv2d, nn.Linear])[1:]:
+        w = layer.weight.data.view(-1).numpy()
+        alpha = find_clip_mmse(w, bits)
+        sf = 1.0 / symmetric_linear_quantization_scale_factor(bits, alpha)
+        sfs.append(sf)
+    return sfs
+    
+def distiller_quantize(x, num_bits, alpha):
+    min_q_val, max_q_val = get_quantized_range(num_bits, signed=True)
+    scale = symmetric_linear_quantization_scale_factor(num_bits, alpha)
+    q = linear_quantize_clamp(torch.from_numpy(x), scale, min_q_val, max_q_val)
+    x = linear_dequantize(q, scale)
+    return x.numpy()
+
+def mse_histogram_clip(bin_x, bin_y, num_bits, alpha):
+   # Clipping error: sum over bins outside the clip threshold
+   idx = np.abs(bin_x) > alpha
+   mse = np.sum((np.abs(bin_x[idx]) - alpha)**2 * bin_y[idx])
+   # Quantization error: sum over bins inside the clip threshold
+   idx = np.abs(bin_x) <= alpha
+   bin_xq = distiller_quantize(bin_x[idx], num_bits, alpha)
+   mse += np.sum((bin_x[idx] - bin_xq)**2 * bin_y[idx])
+   return mse
+
+def find_clip_mmse(values, num_bits):
+    # Build histogram
+    max_abs = np.max(np.abs(values))
+    bin_y, bin_edges = np.histogram(values, bins=201, density=True)
+    bin_x = 0.5*(bin_edges[:-1] + bin_edges[1:])
+    bin_y /= np.sum(bin_y)
+
+    alphas = np.arange(0.01, 1, 0.01) * max_abs
+    mses = [ mse_histogram_clip(bin_x, bin_y, num_bits, alpha)
+             for alpha in alphas ]
+
+    alpha_best = alphas[np.argmin(mses)]
+    return alpha_best

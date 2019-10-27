@@ -83,6 +83,91 @@ __device__ void mod_booth_encode(const scalar_t input, int32_t *__restrict__ ter
 }
 
 template <typename scalar_t>
+__device__ void binary_encode(const scalar_t input, int32_t *__restrict__ terms,
+                              int32_t *num_terms, const float sf) {
+  int32_t b0, b1, b2;
+  int32_t q_val = int32_t(abs(input) / sf);
+  *num_terms = 0;
+  for (int i = 0; i < MAX_BOOTH_SIZE; i++) {
+    terms[i] = 0;
+  }
+
+  for (int i = MAX_BOOTH_SIZE - 1; i >= 0; i--) {
+    b1 = (q_val >> i) & 1;
+    if (b1 == 1) {
+      terms[*num_terms] = (1 << i);
+      (*num_terms)++;
+    }  
+  }
+}
+
+template <typename scalar_t>
+__global__ void binary_cuda_kernel(const scalar_t *__restrict__ input,
+                                   scalar_t *__restrict__ output,
+                                   const float sf,
+                                   const int32_t group_size,
+                                   const int32_t num_keep_terms,
+                                   const int32_t B,
+                                   const int32_t C,
+                                   const int32_t W,
+                                   const int32_t H) {
+  const int32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
+  const int32_t CWH = C * W * H;
+  const int32_t WH = W * H;
+  const int32_t b = idx / CWH;
+  const int32_t c = (idx - b * CWH) / WH;
+  const int32_t w = (idx - b * CWH - c * WH) / W;
+  const int32_t h = idx - b * CWH - c * WH - w * H;
+  const int32_t base_offset = b * CWH + w * W + h;
+  int32_t gidx;
+
+  if (c < (C / group_size)) {
+    int32_t term_idx[MAX_GROUP_SIZE];
+    int32_t num_terms[MAX_GROUP_SIZE];
+    int32_t terms[MAX_GROUP_SIZE * MAX_BOOTH_SIZE];
+    for (int i = 0; i < group_size; ++i) {
+      gidx = (c * group_size + i) * WH + base_offset;
+      output[gidx] = 0;
+      term_idx[i] = 0;
+      binary_encode(input[gidx], &terms[i * MAX_BOOTH_SIZE], &num_terms[i], sf);
+    }
+
+    for (int i = 0; i < num_keep_terms; ++i) {
+      int32_t max_idx = 0;
+      int32_t max_val = 0;
+      // loop through groups and add max term
+      for (int j = 0; j < group_size; ++j) {
+        // find maximum term (of sorted choices)
+        int32_t term = terms[j * MAX_BOOTH_SIZE + term_idx[j]];
+        if (abs(term) > abs(max_val)) {
+          max_val = term;
+          max_idx = j;
+        }
+      }
+
+      // no more useful terms left -- exit
+      if (max_val == 0) {
+        break;
+      }
+
+      // add the max term to correct output
+      gidx = (c * group_size + max_idx) * WH + base_offset;
+      output[gidx] += max_val;
+
+      // increment pointer to max term element
+      term_idx[max_idx]++;
+    }
+
+    // multiply each entry by scaling factor
+    for (int i = 0; i < group_size; ++i) {
+      gidx = (c * group_size + i) * WH + base_offset;
+      int32_t sign = input[gidx] < 0 ? -1 : 1;
+      output[gidx] *= (sign * sf);
+    }
+  }
+}
+
+template <typename scalar_t>
 __global__ void radix_2_mod_cuda_kernel(const scalar_t *__restrict__ input,
                                         scalar_t *__restrict__ output,
                                         const float sf,
@@ -423,6 +508,32 @@ __global__ void weight_group_cuda_kernel(
   }
 }
 } // namespace
+
+at::Tensor binary_cuda(const at::Tensor input, const float sf,
+                       const int32_t group_size, const int32_t num_keep_terms) {
+  const auto ndim = input.ndimension();
+  const auto B = input.size(0);
+  const auto C = input.size(1);
+  auto W = 1;
+  auto H = 1;
+  if (ndim == 4) {
+    W = input.size(2);
+    H = input.size(3);
+  }
+  const auto size = B * C * W * H;
+  const int threads = 128;
+  const int blocks = (size + threads - 1) / threads;
+  auto output = at::zeros_like(input);
+
+  AT_DISPATCH_FLOATING_TYPES(input.type(), "binary_cuda", ([&] {
+                               binary_cuda_kernel<scalar_t><<<blocks, threads>>>(
+                                   input.data<scalar_t>(),
+                                   output.data<scalar_t>(), sf, group_size,
+                                   num_keep_terms, B, C, W, H);
+                             }));
+
+  return output;
+}
 
 at::Tensor radix_2_mod_cuda(const at::Tensor input, const float sf,
                             const int32_t group_size, const int32_t num_keep_terms) {

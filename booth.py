@@ -93,6 +93,14 @@ def radix_2_hack(number):
 
     return keep_exponents
 
+def num_hese_terms(W, sf):
+    W = torch.round(W / sf).int()
+    shape = W.shape
+    W = W.view(-1)
+    W = torch.Tensor([len(radix_2_hack2(w)) for w in W]).cuda()
+    W = W.view(*shape, -1)
+    return W
+
 def radix_2_hack2(number):
     char_number = bin(number).split('b')[1]
     if bin(number)[0] == '-':
@@ -324,6 +332,16 @@ class BoothGroupQuant(nn.Module):
 
     def forward(self, x):
         return booth_cuda.group(x, self.sf, self.group_size, self.num_exps)
+
+class BinaryGroup(nn.Module):
+    def __init__(self, sf, group_size, num_exps):
+        super(BinaryGroup, self).__init__()
+        self.sf = sf
+        self.group_size = group_size
+        self.num_exps = num_exps
+
+    def forward(self, x):
+        return booth_cuda.binary(x, self.sf, self.group_size, self.num_exps)
 
 class Radix2ModGroup(nn.Module):
     def __init__(self, sf, group_size, num_exps):
