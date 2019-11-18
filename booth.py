@@ -93,11 +93,37 @@ def radix_2_hack(number):
 
     return keep_exponents
 
+
 def num_hese_terms(W, sf):
-    W = torch.round(W / sf).int()
+    W = torch.round(W / sf + 0.5).int()
     shape = W.shape
     W = W.view(-1)
     W = torch.Tensor([len(radix_2_hack2(w)) for w in W]).cuda()
+    W = W.view(*shape, -1)
+    return W
+
+
+def num_binary_terms(W, sf):
+    W = torch.round(W / sf + 0.5).int()
+    shape = W.shape
+    W = W.view(-1)
+    W = torch.Tensor([len(binary_encode(w)) for w in W]).cuda()
+    W = W.view(*shape, -1)
+    return W
+
+def num_booth_terms(W, sf):
+    W = torch.round(W / sf + 0.5).int()
+    shape = W.shape
+    W = W.view(-1)
+    W = torch.Tensor([len(radix_2(w)) for w in W]).cuda()
+    W = W.view(*shape, -1)
+    return W
+
+def num_radix4_terms(W, sf):
+    W = torch.round(W / sf + 0.5).int()
+    shape = W.shape
+    W = W.view(-1)
+    W = torch.Tensor([len(radix_4(w)) for w in W]).cuda()
     W = W.view(*shape, -1)
     return W
 

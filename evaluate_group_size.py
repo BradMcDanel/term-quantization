@@ -66,9 +66,12 @@ if __name__=='__main__':
     train_loader, train_sampler, val_loader = util.get_imagenet(args, 'ILSVRC-train-chunk.bin',
                                                                 num_train=1000, num_val=50000)
 
+    model.cpu()
+    w_sfs = util.quantize_layers(model, bits=8)
+    model.cuda()
     results = {}
-    avg_terms = [1.0, 1.5, 2.0, 2.5, 3.0]
-    group_sizes = [1, 2, 4, 8, 16]
+    avg_terms = [1.0, 1.25, 1.5, 2.0, 3.0]
+    group_sizes = [1, 2, 8, 16, 32]
     for group_size in group_sizes:
         name = str(group_size)
         results[name] = {'avg_terms': [], 'acc': []}
@@ -76,9 +79,8 @@ if __name__=='__main__':
             if group_size == 1 and not avg_term.is_integer():
                 continue
             term = int(group_size * avg_term)
-            qmodel = models.convert_model(model, 3, 1, term, group_size,
-                                          3, 1, term, group_size,
-                                          models.data_stationary_point(model))
+            qmodel = models.convert_model(model, w_sfs, 3, 1, term, group_size,
+                                          3, 1, term, group_size, 1)
             criterion = nn.CrossEntropyLoss().cuda()
             qmodel = torch.nn.DataParallel(qmodel).cuda()
             _, acc = util.validate(val_loader, qmodel, criterion, args, verbose=False)

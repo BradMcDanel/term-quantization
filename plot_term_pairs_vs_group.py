@@ -32,21 +32,23 @@ import booth
 import models
 import util
 plt = util.import_plt_settings(local_display=False)
+import matplotlib.lines as lines
+import matplotlib
 
-def get_term_count(model, quant_func, minlength=None):
+def get_term_count(model, group_size, quant_func, minlength=None):
     if quant_func == 'hese':
         func = booth.num_hese_terms
     else:
         func = booth.num_binary_terms
-    x = model.features[8][0].x
-    w = model.features[8][1].weight.data
+    x = model.features[24][0].x
+    w = model.features[24][1].weight.data
     B, C, W, H = x.shape
     F = w.shape[0]
     x = x.permute(0, 2, 3, 1).contiguous().view(-1, C)
     x_terms = func(x, 2**-7)
     x_terms = x_terms.view(B*W*H, C)
     w = w.view(F, C)
-    w_terms = func(w, w_sfs[2])
+    w_terms = func(w, w_sfs[12])
     w_terms = w_terms.view(F, C)
 
     all_res = []
@@ -95,61 +97,61 @@ if __name__=='__main__':
     train_loader, train_sampler, val_loader = util.get_imagenet(args, 'ILSVRC-train-chunk.bin',
                                                                 num_train=128, num_val=4)
 
-    group_size = 8
-    stat_terms = [8, 8, 4, 4]
-    terms = [1000, 20, 1000, 16]
-    quant_funcs = ['binary', 'binary', 'hese', 'hese']
+    group_sizes = [1, 2, 4, 8, 16]
 
     bcs = []
-    for i, (term, stat_term, quant_func) in enumerate(zip(terms, stat_terms, quant_funcs)):
+    for group_size in group_sizes:
+        print(group_size)
         qmodel = copy.deepcopy(model).cpu()
         w_sfs = util.quantize_layers(qmodel, bits=8)
         qmodel.cuda()
-        qmodel = models.convert_model(qmodel, w_sfs, stat_term, 1, term, group_size, stat_term,
-                                      1, term, group_size, 1000, fuse_bn=False, quant_func=quant_func)
 
         criterion = nn.CrossEntropyLoss().cuda()
         util.add_average_trackers(qmodel, nn.Conv2d)
         qmodel.cuda()
         _, acc = util.validate(val_loader, qmodel, criterion, args, verbose=True)
-        bc = get_term_count(qmodel, quant_func)
+
+        bc = get_term_count(qmodel, group_size, 'binary')
         bcs.append(bc)
+    
 
-    fill_colors = ['cornflowerblue', 'tomato', 'cornflowerblue', 'tomato']
-    names = ['Original, Binary', 'Term Revealing, Binary',
-             'Original, HESE', 'Term Revealing, HESE']
-    fig, axes = plt.subplots(4, sharex=True, sharey=True)
-    max_x = len(bcs[0]) + 10
-    max_y = 4.5
-    for i, (ax, bc, fill_color, name) in enumerate(zip(axes, bcs, fill_colors, names)):
-        xs = np.arange(len(bc))
+    fig, axes = plt.subplots(5, figsize=(5, 4.5), sharex=True)
+    yticks = [(0, 25), (0, 12), (0, 3), (0, 2), (0, 1)]
+    for i, (ax, bc, group_size, ytick) in enumerate(zip(axes, bcs, group_sizes, yticks)):
         bc = 100. * (bc / bc.sum())
-        ax.plot(xs, bc, '-', color='k', linewidth=1.0)
-        plot = ax.fill_between(xs, bc, color=fill_color, edgecolor=fill_color)
+        max_x = len(bcs[-1]) + 5
+        max_y = max(bc) * 0.75
+        long_tail = np.arange(len(bc))[np.cumsum(bc) > 99][0]
+        last_x = len(bc)
 
-        # ax.text(max_x, 3.4, name, fontsize=14, ha='right')
+        ax.fill_between(np.arange(len(bc)), bc)
+        ax.plot(np.arange(len(bc)), bc, '-', color='k', linewidth=1.0)
 
-        # TODO: Add back annotations
-        # if i == 0:
-        #     ax.annotate('Max(232/512)', xy=(233.5, 0.0),  textcoords='data',
-        #                 xytext=(232.5-50, 1.2), fontsize=12, arrowprops=dict(arrowstyle="-"))
-        #     ax.plot([233.5], [0], 'or', markeredgecolor='k', ms=4)
-        # elif i == 1:
-        #     ax.annotate('Max(128/128)', xy=(127.5, 0.0), textcoords='data',
-        #                 xytext=(128.5-30, 1.2), fontsize=12, arrowprops=dict(arrowstyle="-"))
-        #     ax.plot([127.5], [0], 'or', markeredgecolor='k', ms=4)
-        # elif i == 2:
-        #     ax.annotate('Max(113/128)', xy=(112.5, 0.0), textcoords='data',
-        #                 xytext=(113.5-30, 1.2), fontsize=12, arrowprops=dict(arrowstyle="-"))
-        #     ax.plot([112.5], [0], 'or', markeredgecolor='k', ms=4)
-        # elif i == 3:
-        #     ax.annotate('Max(64/64)', xy=(63.5, 0.0), textcoords='data',
-        #                 xytext=(64.5-10, 1.2), fontsize=12, arrowprops=dict(arrowstyle="-"))
-        #     ax.plot([63.5], [0], 'or', markeredgecolor='k', ms=4)
+        if i == 0:
+            offset = 0
+        elif i == 4:
+            offset = -30
+        else:
+            offset = -10
 
-    fig.text(0.02, 0.5, 'Frequency (%)', rotation=90, ha='center', va='center', fontsize=18)
+        # tail
+        ax.annotate('99%({})'.format(long_tail), xy=(long_tail, max_y*0.05),  textcoords='data',
+                    xytext=(long_tail-10, max_y * 0.5), fontsize=12, arrowprops=dict(arrowstyle="-"))
+        ax.plot([long_tail], [max_y*0.05], 'or', markeredgecolor='k', ms=4)
+
+        # max
+        ax.annotate('Max({})'.format(last_x), xy=(last_x, max_y*0.05),  textcoords='data',
+                    xytext=(last_x+offset, max_y * 0.5), fontsize=12, arrowprops=dict(arrowstyle="-"))
+        ax.plot([last_x], [max_y*0.05], 'or', markeredgecolor='k', ms=4)
+
+        ax.set_yticks(ytick)
+        ax.text(max_x, max_y, 'Group of {}'.format(group_size), fontsize=14, ha='right')
+
+    fig.text(0.01, 0.5, 'Frequency of Term Pairs', rotation=90,
+             ha='center', va='center', fontsize=18)
+    axes[0].set_title('(a) Term Pairs per Group Size')
+    axes[4].set_xlabel('Number of Term Pairs')
+    plt.tight_layout()
     fig.subplots_adjust(hspace=0.0, wspace=0.0)
-    axes[0].set_title('Term Pair Frequency per Group of 8')
-    axes[3].set_xlabel('Number of Term Pairs')
-    plt.savefig('figures/shiftnet.png', dpi=300, bbox_inches='tight')
+    plt.savefig('figures/term-group-dist.pdf', dpi=300, bbox_inches='tight')
     plt.clf()

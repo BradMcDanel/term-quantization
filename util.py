@@ -404,12 +404,12 @@ class AverageTracker(nn.Module):
         C, W, H = self.zeros.shape
         return self.zeros.sum((1, 2)) / float(W*H*self.count)
 
-def add_average_trackers(model):
+def add_average_trackers(model, before_layer):
     for child_name, child in model.named_children():
-        if isinstance(child, Shift):
-            setattr(model, child_name, nn.Sequential(child, AverageTracker()))
+        if isinstance(child, before_layer):
+            setattr(model, child_name, nn.Sequential(AverageTracker(), child))
         else:
-            add_average_trackers(child)
+            add_average_trackers(child, before_layer)
 
 def get_average_trackers(model):
     average_trackers = []
@@ -434,12 +434,36 @@ def quantize_layer(layer, bits):
 
 def quantize_layers(model, bits):
     sfs = []
-    for layer in get_layers(model, [nn.Conv2d, nn.Linear])[1:]:
+    for layer in get_layers(model, [nn.Conv2d]):
         w = layer.weight.data.view(-1).numpy()
         alpha = find_clip_mmse(w, bits)
         sf = 1.0 / symmetric_linear_quantization_scale_factor(bits, alpha)
+        w = layer.weight.data
+        w = sf * torch.floor((w / sf) + 0.5)
+        layer.weight.data = w
         sfs.append(sf)
     return sfs
+
+class UniformQuant(nn.Module):
+    def __init__(self, bits, sf):
+        super(UniformQuant, self).__init__()
+        self.bits = bits
+        self.sf = sf
+        self.minv = -sf * 2**bits
+        self.maxv = sf * 2**bits
+    
+    def forward(self, x):
+        x = self.sf * torch.round(x / self.sf + 0.5)
+        x = torch.clamp(x, self.minv, self.maxv)
+        return x
+
+def add_uniform_quant(model, bits, sf=2**-7):
+    for child_name, child in model.named_children():
+        if isinstance(child, nn.ReLU):
+            setattr(model, child_name, nn.Sequential(child, UniformQuant(bits, sf)))
+        else:
+            add_uniform_quant(child, bits, sf)
+
     
 def distiller_quantize(x, num_bits, alpha):
     min_q_val, max_q_val = get_quantized_range(num_bits, signed=True)

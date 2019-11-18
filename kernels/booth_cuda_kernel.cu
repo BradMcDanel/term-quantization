@@ -46,7 +46,7 @@ template <typename scalar_t>
 __device__ void mod_booth_encode(const scalar_t input, int32_t *__restrict__ terms,
                                  int32_t *num_terms, const float sf) {
   int32_t b0, b1, b2;
-  int32_t q_val = int32_t(abs(input) / sf);
+  int32_t q_val = int32_t(abs(input) / sf + 0.5);
   int32_t sign = input < 0 ? -1 : 1;
   *num_terms = 0;
   for (int i = 0; i < MAX_BOOTH_SIZE; i++) {
@@ -86,7 +86,7 @@ template <typename scalar_t>
 __device__ void binary_encode(const scalar_t input, int32_t *__restrict__ terms,
                               int32_t *num_terms, const float sf) {
   int32_t b0, b1, b2;
-  int32_t q_val = int32_t(abs(input) / sf);
+  int32_t q_val = int32_t(abs(input) / sf + 0.5);
   *num_terms = 0;
   for (int i = 0; i < MAX_BOOTH_SIZE; i++) {
     terms[i] = 0;

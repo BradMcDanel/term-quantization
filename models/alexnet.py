@@ -77,7 +77,6 @@ def convert_alexnet(model, w_sfs, w_move_terms, w_move_group, w_stat_terms, w_st
     curr_layer = 0
     for i, layer in enumerate(model.features):
         if isinstance(layer, nn.Conv2d):
-            print(curr_layer, w_move_group, w_move_terms, w_sfs[curr_layer])
             if curr_layer < data_stationary: 
                 # ignore first layer (usually smaller than group size)
                 if layer.weight.shape[1] > 3:

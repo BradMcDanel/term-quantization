@@ -29,14 +29,14 @@ for func in funcs:
         error_row.append(error)
     errors.append(error_row)
 
-plt.figure(figsize=(5.5, 4.8))
+# plt.figure(figsize=(5.5, 4.8))
 for name, error in zip(names, errors):
     plt.plot(num_exps, error, '-o',  linewidth=2.5, ms=8,
              markeredgecolor='k', markeredgewidth=0.8, label=name)
 
-plt.title('(b) Truncation Error of PoT Exprs.')
-plt.xlabel('Truncated Number of Terms')
-plt.ylabel('Average Truncation Error (log)')
+plt.title('Error for Different Encodings')
+plt.xlabel('Maximum Number of Terms')
+plt.ylabel('Quantization Error (log)')
 plt.yscale('log')
 plt.legend(loc=0)
 plt.xticks(num_exps)

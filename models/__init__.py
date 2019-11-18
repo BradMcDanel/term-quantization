@@ -9,7 +9,7 @@ from copy import deepcopy
 
 def convert_model(model, w_sfs, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
                   d_move_terms, d_move_group, d_stat_terms, d_stat_group,
-                  data_stationary):
+                  data_stationary, fuse_bn=False, quant_func='hese'):
 
     # copy the model, since we modify it internally
     model = deepcopy(model)
@@ -17,7 +17,7 @@ def convert_model(model, w_sfs, w_move_terms, w_move_group, w_stat_terms, w_stat
     if isinstance(model, ShiftNet):
         return convert_shiftnet19(model, w_sfs, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
                                   d_move_terms, d_move_group, d_stat_terms, d_stat_group,
-                                  data_stationary)
+                                  data_stationary, fuse_bn=fuse_bn, quant_func=quant_func)
     elif isinstance(model, AlexNet):
         return convert_alexnet(model, w_sfs, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
                                d_move_terms, d_move_group, d_stat_terms, d_stat_group,
