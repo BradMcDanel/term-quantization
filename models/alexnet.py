@@ -70,34 +70,28 @@ def alexnet(pretrained=False, progress=True, **kwargs):
     return model
 
 
-def convert_alexnet(model, w_sfs, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
-                    d_move_terms, d_move_group, d_stat_terms, d_stat_group,
-                    data_stationary):
+def convert_alexnet(model, tr_params, bitwidth):
     layers = []
     curr_layer = 0
     for i, layer in enumerate(model.features):
         if isinstance(layer, nn.Conv2d):
-            if curr_layer < data_stationary: 
-                # ignore first layer (usually smaller than group size)
-                if layer.weight.shape[1] > 3:
-                    layer.weight.data = booth.booth_cuda.radix_2_mod(layer.weight.data, w_sfs[curr_layer],
-                                                                     w_stat_group, w_stat_terms)
-            else:
-                layer.weight.data = booth.booth_cuda.radix_2_mod(layer.weight.data, w_sfs[curr_layer],
-                                                                 w_move_group, w_move_terms)
-        elif isinstance(layer, nn.ReLU):
-            if i == len(model.features) - 1:
-                pass
-            elif curr_layer < data_stationary:
-                layer = nn.Sequential(
-                        nn.ReLU(inplace=True),
-                        booth.Radix2ModGroup(2**-6, d_move_group, d_move_terms),
-                    )
-            else:
-                layer = nn.Sequential(
-                        nn.ReLU(inplace=True),
-                        booth.Radix2ModGroup(2**-6, d_stat_group, d_stat_terms),
-                    )
+            sf, group_size, terms = tr_params[curr_layer]
+            wq = booth.booth_cuda.radix_2_mod(layer.weight.data, sf, bitwidth,
+                                              group_size, terms)
+            layer.weight.data = wq
+        # elif isinstance(layer, nn.ReLU):
+        #     if i == len(model.features) - 1:
+        #         pass
+        #     elif curr_layer < data_stationary:
+        #         layer = nn.Sequential(
+        #                 nn.ReLU(inplace=True),
+        #                 booth.Radix2ModGroup(2**-6, 8, d_move_group, d_move_terms),
+        #             )
+        #     else:
+        #         layer = nn.Sequential(
+        #                 nn.ReLU(inplace=True),
+        #                 booth.Radix2ModGroup(2**-6, 8, d_stat_group, d_stat_terms),
+        #             )
 
         layers.append(layer)
 

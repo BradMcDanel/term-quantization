@@ -1,8 +1,10 @@
 from torch import nn
 from .utils import load_state_dict_from_url
+import booth
+import util
 
 
-__all__ = ['MobileNetV2', 'mobilenet_v2']
+__all__ = ['MobileNetV2', 'mobilenet_v2', 'ConvertedMobileNetV2']
 
 
 model_urls = {
@@ -177,56 +179,26 @@ class MobileNetV2(nn.Module):
         return x
 
 class ConvertedMobileNetV2(nn.Module):
-    def __init__(self, mobilenet, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
+    def __init__(self, model, w_sfs, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
                  d_move_terms, d_move_group, d_stat_terms, d_stat_group,
                  data_stationary):
         super(ConvertedMobileNetV2, self).__init__()
+    
+        self.features = model.features
+        self.classifier = model.classifier
 
-        layers = []
-        num_layers = 0
-        for i, layer in enumerate(mobilenet.features):
-            if isinstance(layer, InvertedResidual):
-                is_data_stat = num_layers > data_stationary
-                qlayer = ConvertedInvertedResidual(layer, w_move_terms, w_move_group,
-                                                   w_stat_terms, w_stat_group,
-                                                   d_move_terms, d_move_group,
-                                                   d_stat_terms, d_stat_group, is_data_stat)
-
-
-        # building first layer
-        input_channel = _make_divisible(input_channel * width_mult, round_nearest)
-        self.last_channel = _make_divisible(last_channel * max(1.0, width_mult), round_nearest)
-        features = [ConvBNReLU(3, input_channel, stride=2)]
-        # building inverted residual blocks
-        for t, c, n, s in inverted_residual_setting:
-            output_channel = _make_divisible(c * width_mult, round_nearest)
-            for i in range(n):
-                stride = s if i == 0 else 1
-                features.append(block(input_channel, output_channel, stride, expand_ratio=t))
-                input_channel = output_channel
-        # building last several layers
-        features.append(ConvBNReLU(input_channel, self.last_channel, kernel_size=1))
-        # make it nn.Sequential
-        self.features = nn.Sequential(*features)
-
-        # building classifier
-        self.classifier = nn.Sequential(
-            nn.Dropout(0.2),
-            nn.Linear(self.last_channel, num_classes),
-        )
-
-        # weight initialization
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out')
-                if m.bias is not None:
-                    nn.init.zeros_(m.bias)
-            elif isinstance(m, nn.BatchNorm2d):
-                nn.init.ones_(m.weight)
-                nn.init.zeros_(m.bias)
-            elif isinstance(m, nn.Linear):
-                nn.init.normal_(m.weight, 0, 0.01)
-                nn.init.zeros_(m.bias)
+        curr_layer = 0
+        for name, param in self.named_parameters():
+            if 'conv' in name and 'weight' in name:
+                if curr_layer != 0 and \
+                   len(param.data.shape) == 4 and \
+                   param.data.shape[2] == 1:
+                    param.data = booth.booth_cuda.radix_2_mod(param.data, w_sfs[curr_layer],
+                                                              w_move_group, w_move_terms)
+                if len(param.shape) == 4:
+                    curr_layer += 1
+        
+        util.relu_to_booth(self, 2**-6, d_stat_group, d_stat_terms)
 
     def forward(self, x):
         x = self.features(x)

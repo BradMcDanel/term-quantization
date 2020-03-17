@@ -6,7 +6,7 @@
 at::Tensor binary_cuda(const at::Tensor input,  const float sf,
                        const int32_t group_size, const int32_t num_keep_terms);
 
-at::Tensor radix_2_mod_cuda(const at::Tensor input,  const float sf,
+at::Tensor radix_2_mod_cuda(const at::Tensor input,  const float sf, const int32_t bitwidth,
                             const int32_t group_size, const int32_t num_keep_terms);
 
 at::Tensor value_group_cuda(const at::Tensor input, const int32_t group_size,
@@ -45,10 +45,10 @@ at::Tensor binary(const at::Tensor input, const float sf,
   return binary_cuda(input, sf, group_size, num_keep_terms);
 }
 
-at::Tensor radix_2_mod(const at::Tensor input, const float sf,
+at::Tensor radix_2_mod(const at::Tensor input, const float sf, const int32_t bitwidth,
                        const int32_t group_size, const int32_t num_keep_terms) {
   CHECK_INPUT(input);
-  return radix_2_mod_cuda(input, sf, group_size, num_keep_terms);
+  return radix_2_mod_cuda(input, sf, bitwidth, group_size, num_keep_terms);
 }
 
 at::Tensor value_group(const at::Tensor input, const int32_t group_size,

@@ -63,6 +63,7 @@ for key, value in list(model_results.items()):
 
 ax1.add_patch(Rectangle((0.95, 64), 2.1 - 0.96, 3.5,
                          alpha=1, facecolor='none', edgecolor='k', zorder=10000))
+# ax1.plot([2.1, 2.0], [64, 63], '-k', linewidth=0.5)
 ax1.legend(loc='lower right', ncol=2)
 ax1.set_title(r'(b) Impact of Group Size $g$')
 ax1.set_xlabel(r'Average Number of Terms $\alpha$')

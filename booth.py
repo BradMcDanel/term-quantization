@@ -370,14 +370,15 @@ class BinaryGroup(nn.Module):
         return booth_cuda.binary(x, self.sf, self.group_size, self.num_exps)
 
 class Radix2ModGroup(nn.Module):
-    def __init__(self, sf, group_size, num_exps):
+    def __init__(self, sf, bitwidth, group_size, num_exps):
         super(Radix2ModGroup, self).__init__()
         self.sf = sf
+        self.bitwidth = bitwidth
         self.group_size = group_size
         self.num_exps = num_exps
 
     def forward(self, x):
-        return booth_cuda.radix_2_mod(x, self.sf, self.group_size, self.num_exps)
+        return booth_cuda.radix_2_mod(x, self.sf, self.bitwidth, self.group_size, self.num_exps)
 
 class ValueGroup(nn.Module):
     def __init__(self, group_size, num_values):

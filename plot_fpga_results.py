@@ -3,6 +3,8 @@ import numpy as np
 import util
 plt = util.import_plt_settings(local_display=True)
 
+plt.rc('axes', titlesize=25)  # fontsize of the figure title
+
 energy_eff = {
     'bmac': [1, 1, 1],
     'pmac': [2.5, 2.5, 2.5],
@@ -20,7 +22,7 @@ plt.bar(x_ticks+2*width, energy_eff['tmac'], label='tMAC', hatch='//', width=wid
 
 plt.legend(loc=0)
 plt.tight_layout()
-# plt.title('(b) FPGA')
+plt.title('(d) FPGA Energy Efficiency')
 # plt.ylim(top=100)
 plt.ylabel('Normalized Energy Efficiency')
 plt.xticks(x_ticks+width, [r'$\alpha=2,g=2$', r'$\alpha=1.25,g=8$',r'$\alpha=1,g=32$'], fontsize=17)

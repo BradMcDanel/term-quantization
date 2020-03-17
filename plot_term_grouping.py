@@ -2,9 +2,11 @@ import json
 
 import util
 plt = util.import_plt_settings(local_display=True)
+import matplotlib
+matplotlib.rc('legend', fontsize=12)
 
 names = ['shiftnet19', 'vgg19_bn', 'resnet152']
-fancy_names = {'fixed': 'Truncate', 'group': 'Reveal', 'alexnet': 'AlexNet', 'vgg19_bn': 'VGG-19',
+fancy_names = {'fixed': 'Truncate', 'group': 'TR', 'alexnet': 'AlexNet', 'vgg19_bn': 'VGG-19',
                'shiftnet19': 'ShiftNet-19', 'resnet152': 'ResNet-152'}
 
 colors = {

@@ -6,9 +6,9 @@
 #include <stdio.h>
 #include <vector>
 
-#define MAX_GROUP_SIZE 64
-#define MAX_BOOTH_SIZE 31
-#define MAX_VALUES 32
+#define MAX_GROUP_SIZE 32
+#define MAX_BOOTH_SIZE 64
+#define MAX_VALUES 64
 
 namespace {
 template <typename scalar_t>
@@ -44,9 +44,10 @@ __device__ void booth_encode(const scalar_t input, int32_t *__restrict__ terms,
 
 template <typename scalar_t>
 __device__ void mod_booth_encode(const scalar_t input, int32_t *__restrict__ terms,
-                                 int32_t *num_terms, const float sf) {
+                                 int32_t *num_terms, const int32_t bitwidth, const float sf) {
   int32_t b0, b1, b2;
-  int32_t q_val = int32_t(abs(input) / sf + 0.5);
+  float maxv = pow(2, bitwidth) - 1;
+  int32_t q_val = fminf(int32_t(abs(input) / sf + 0.5), maxv);
   int32_t sign = input < 0 ? -1 : 1;
   *num_terms = 0;
   for (int i = 0; i < MAX_BOOTH_SIZE; i++) {
@@ -171,6 +172,7 @@ template <typename scalar_t>
 __global__ void radix_2_mod_cuda_kernel(const scalar_t *__restrict__ input,
                                         scalar_t *__restrict__ output,
                                         const float sf,
+                                        const int32_t bitwidth,
                                         const int32_t group_size,
                                         const int32_t num_keep_terms,
                                         const int32_t B,
@@ -195,7 +197,7 @@ __global__ void radix_2_mod_cuda_kernel(const scalar_t *__restrict__ input,
       gidx = (c * group_size + i) * WH + base_offset;
       output[gidx] = 0;
       term_idx[i] = 0;
-      mod_booth_encode(input[gidx], &terms[i * MAX_BOOTH_SIZE], &num_terms[i], sf);
+      mod_booth_encode(input[gidx], &terms[i * MAX_BOOTH_SIZE], &num_terms[i], bitwidth, sf);
     }
 
     for (int i = 0; i < num_keep_terms; ++i) {
@@ -535,7 +537,7 @@ at::Tensor binary_cuda(const at::Tensor input, const float sf,
   return output;
 }
 
-at::Tensor radix_2_mod_cuda(const at::Tensor input, const float sf,
+at::Tensor radix_2_mod_cuda(const at::Tensor input, const float sf, const int32_t bitwidth,
                             const int32_t group_size, const int32_t num_keep_terms) {
   const auto ndim = input.ndimension();
   const auto B = input.size(0);
@@ -554,7 +556,7 @@ at::Tensor radix_2_mod_cuda(const at::Tensor input, const float sf,
   AT_DISPATCH_FLOATING_TYPES(input.type(), "radix_2_mod_cuda", ([&] {
                                radix_2_mod_cuda_kernel<scalar_t><<<blocks, threads>>>(
                                    input.data<scalar_t>(),
-                                   output.data<scalar_t>(), sf, group_size,
+                                   output.data<scalar_t>(), sf, bitwidth, group_size,
                                    num_keep_terms, B, C, W, H);
                              }));
 

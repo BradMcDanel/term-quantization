@@ -16,6 +16,7 @@ import numpy as np
 from torch.utils.data.dataset import Dataset
 from q_utils import *
 from shift import Shift
+import booth
 
 def fuse(conv, bn):
     w = conv.weight
@@ -265,7 +266,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
     return losses.avg
 
 
-def validate(val_loader, model, criterion, args, verbose=True):
+def validate(val_loader, model, criterion, args, verbose=True, pct=1.0):
     batch_time = AverageMeter('Time', ':6.3f')
     losses = AverageMeter('Loss', ':.4e')
     top1 = AverageMeter('Acc@1', ':6.2f')
@@ -275,12 +276,15 @@ def validate(val_loader, model, criterion, args, verbose=True):
 
     # switch to evaluate mode
     model.eval()
+    eval_samples = round(pct * val_loader.dataset.num_samples)
+    curr_samples = 0
 
     with torch.no_grad():
         end = time.time()
         for i, (images, target) in enumerate(val_loader):
             if args.gpu is not None:
                 images = images.cuda(args.gpu, non_blocking=True)
+            curr_samples += len(target)
             target = target.cuda(args.gpu, non_blocking=True)
 
             # compute output
@@ -299,6 +303,9 @@ def validate(val_loader, model, criterion, args, verbose=True):
 
             if i % args.print_freq == 0 and verbose:
                 progress.display(i)
+            
+            if curr_samples >= eval_samples:
+                break
 
 
         # TODO: this should also be done with the ProgressMeter
@@ -444,6 +451,7 @@ def quantize_layers(model, bits):
         sfs.append(sf)
     return sfs
 
+
 class UniformQuant(nn.Module):
     def __init__(self, bits, sf):
         super(UniformQuant, self).__init__()
@@ -495,3 +503,19 @@ def find_clip_mmse(values, num_bits):
 
     alpha_best = alphas[np.argmin(mses)]
     return alpha_best
+
+def relu_to_booth(model, sf, groups, terms):
+    for child_name, child in model.named_children():
+        if isinstance(child, nn.ReLU):
+            setattr(model, child_name, nn.Sequential(
+                nn.ReLU(inplace=True),
+                booth.Radix2ModGroup(sf, groups, terms)
+            ))
+        elif isinstance(child, nn.ReLU6):
+            setattr(model, child_name, nn.Sequential(
+                nn.ReLU6(inplace=True),
+                booth.Radix2ModGroup(sf, groups, terms)
+            ))
+        else:
+            relu_to_booth(child, sf, groups, terms)
+        

@@ -98,7 +98,7 @@ if __name__=='__main__':
     x_terms = np.array(x_terms.cpu().view(-1).tolist()).astype(int)
 
 
-    fig, axes = plt.subplots(2,2)
+    fig, axes = plt.subplots(2,2, figsize=(8, 4.5))
 
     min_b = abs(w_bin.min())
     bars = np.bincount(w_bin + min_b)

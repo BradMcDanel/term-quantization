@@ -145,7 +145,7 @@ if __name__=='__main__':
         ax.plot([last_x], [max_y*0.05], 'or', markeredgecolor='k', ms=4)
 
         ax.set_yticks(ytick)
-        ax.text(max_x, max_y, 'Group of {}'.format(group_size), fontsize=14, ha='right')
+        ax.text(max_x, max_y, 'Group size of {}'.format(group_size), fontsize=14, ha='right')
 
     fig.text(0.01, 0.5, 'Frequency of Term Pairs', rotation=90,
              ha='center', va='center', fontsize=18)
