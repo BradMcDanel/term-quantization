@@ -1,72 +1,21 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from torch.utils.cpp_extension import load
 
-from util import AverageMeter
-
-booth_cuda = load('booth_cuda', ['kernels/booth_cuda.cpp',
-                  'kernels/booth_cuda_kernel.cu'], extra_cflags=['-O3'])
-
-
-def clamp(input, min, max, inplace=False):
-    if inplace:
-        input.clamp_(min, max)
-        return input
-    return torch.clamp(input, min, max)
-
-
-def linear_quantize(input, scale_factor, inplace=False):
-    if inplace:
-        input.mul_(scale_factor).round_()
-        return input
-    return torch.round(scale_factor * input)
-
-
-def linear_quantize_clamp(input, scale_factor, clamp_min, clamp_max, inplace=False):
-    output = linear_quantize(input, scale_factor, inplace)
-    return clamp(output, clamp_min, clamp_max, inplace)
-
-
-def linear_dequantize(input, scale_factor, inplace=False):
-    if inplace:
-        input.div_(scale_factor)
-        return input
-    return input / scale_factor
-
-
-def profile_tensor(w, err_tol):
-    from itertools import product
-    group_sizes = [16]
-    term_factors = [0.5, 0.75, 0.875, 1, 1.125, 1.25, 1.375, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3.0]
-    bit_settings = [10]
-    settings = product(bit_settings, group_sizes, term_factors)
-
-    for weight_bits, group_size, term_factor in settings:
-        num_terms = round(group_size * term_factor)
-        max_wq = 2**(weight_bits - 1)
-        w_sf = w.abs().max().item() / max_wq
-        wq = booth_cuda.radix_2_mod(w, w_sf, weight_bits, group_size, num_terms)
-        avg_err = (wq - w).abs().mean().item()
-        if avg_err < err_tol:
-            return weight_bits, group_size, num_terms
-    
-    print('Could not find setting below err_tol: ', err_tol)
-    assert False
+tr_cuda = load('tr_cuda', ['kernels/tr_cuda.cpp', 'kernels/tr_cuda_kernel.cu'])
 
 def mse_profile(hist, minv, maxv, bit_width, terms):
     x = torch.linspace(minv, maxv, len(hist)).cuda()
     sfs = torch.linspace(1e-8, maxv, 2048).tolist()
     errs = []
     for sf in sfs:
-        xh = booth_cuda.radix_2_mod(x.view(-1, 1, 1, 1), sf, bit_width, 1, terms)
+        xh = tr_cuda.tr(x.view(-1, 1, 1, 1), sf, bit_width, 1, terms)
         xh = xh.view(-1)
         err = (hist * (x - xh)**2).sum()
         errs.append(err)
 
     min_idx = torch.argmin(torch.Tensor(errs)).item()
     return sfs[min_idx]
-
 
 class LinearQuantize(nn.Module):
     def __init__(self, data_bits, data_terms):
@@ -79,15 +28,15 @@ class LinearQuantize(nn.Module):
         self.tracking = True
         self.data_bits = data_bits
         self.data_terms = data_terms
-    
+
     def forward(self, x):
         if self.tracking:
             self.hist_bins += torch.histc(x, self.num_bins, self.minv,
                                           self.maxv)
             return x
 
-        return booth_cuda.radix_2_mod(x, self.sf, self.data_bits, 1, self.data_terms)
-    
+        return tr_cuda.tr(x, self.sf, self.data_bits, 1, self.data_terms)
+
     def finish_tracking(self):
         self.sf = mse_profile(self.hist_bins, self.minv, self.maxv,
                               self.data_bits, self.data_terms)
@@ -107,17 +56,16 @@ class TRConv2dLayer(nn.Module):
         w = conv_layer.weight
         max_wq = 2**(self.weight_bits - 1)
         self.w_sf = w.abs().max().item() / max_wq
-        w = booth_cuda.radix_2_mod(w, self.w_sf, weight_bits, self.group_size,
-                                   self.num_terms)
+        w = tr_cuda.tr(w, self.w_sf, weight_bits, self.group_size, self.num_terms)
         conv_layer.weight = nn.Parameter(w)
         self.conv = conv_layer
-    
+
     def forward(self, x):
         xq = self.input_quant(x)
         return self.conv(xq)
-    
+
     def tracking(self, tracking):
-        if tracking == False:
+        if not tracking:
             self.input_quant.finish_tracking()
         else:
             self.input_quant.tracking = True

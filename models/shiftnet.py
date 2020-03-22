@@ -1,23 +1,65 @@
+'''
+Implementation based on:
+"Shift: A Zero FLOP, Zero Parameter Alternative to Spatial Convolutions"
+(https://arxiv.org/pdf/1711.08141.pdf)
+'''
+
 import torch
 import torch.nn as nn
-from .utils import load_state_dict_from_url
+from torch.utils.cpp_extension import load
+from torch.distributions import categorical
 
-import sys 
-sys.path.append('..')
+__all__ = ['ShiftNet', 'shiftnet19']
 
-from util import fuse
-import booth
-import shift
+shift_cuda = load('shift_cuda', ['kernels/shift_cuda.cpp', 'kernels/shift_cuda_kernel.cu'])
 
-__all__ = ['ShiftNet', 'shiftnet19', 'convert_shiftnet19', 'convert_value_shiftnet19']
+class shift(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, x, shift_dirs):
+        ctx.save_for_backward(shift_dirs)
+        return shift_cuda.forward(x, shift_dirs)
 
-model_urls = {
-    'shiftnet19': 'https://github.com/BradMcDanel/term-grouping/blob/master/pth/shiftnet19-d372c4d2.pth?raw=true'
-}
+    @staticmethod
+    def backward(ctx, grad_output):
+        shift_dirs, = ctx.saved_tensors
+        grad_output = shift_cuda.backward(grad_output, shift_dirs)
+
+        return grad_output, None
+
+
+class Shift(nn.Module):
+    def __init__(self, in_channels, kernel_size):
+        super(Shift, self).__init__()
+        self.channels = in_channels
+        self.kernel_size = kernel_size
+        if kernel_size == 3:
+            p = torch.Tensor([0.3, 0.4, 0.3])
+        elif kernel_size == 5:
+            p = torch.Tensor([0.1, 0.25, 0.3, 0.25, 0.1])
+        elif kernel_size == 7:
+            p = torch.Tensor([0.075, 0.1, 0.175, 0.3, 0.175, 0.1, 0.075])
+        elif kernel_size == 9:
+            p = torch.Tensor([0.05, 0.075, 0.1, 0.175, 0.2, 0.175, 0.1, 0.075, 0.05])
+        else:
+            raise RuntimeError('Unsupported kernel size')
+
+        shift_t = categorical.Categorical(p).sample((in_channels, 2)) - (kernel_size // 2)
+        self.register_buffer('shift_t', shift_t.int())
+
+    def forward(self, x):
+        if not x.is_cuda:
+            print('Shift only supports GPU for now..')
+            assert False
+
+        return shift.apply(x, self.shift_t)
+
+    def extra_repr(self):
+        s = ('{channels}, kernel_size={kernel_size}')
+        return s.format(**self.__dict__)
 
 def shift_layer(in_channels, out_channels, kernel_size=3, stride=1):
     return [
-        shift.Shift(in_channels, kernel_size),
+        Shift(in_channels, kernel_size),
         nn.Conv2d(in_channels, out_channels, 1, stride, 0),
         nn.BatchNorm2d(out_channels, affine=True),
         nn.ReLU()
@@ -56,7 +98,7 @@ class ShiftNet(nn.Module):
         x = self.classifier(x)
         return x
 
-def shiftnet19(pretrained=False, progress=True):
+def shiftnet19(pretrained=False):
     settings = [
         [64, 1],
         [64, 1],
@@ -80,100 +122,6 @@ def shiftnet19(pretrained=False, progress=True):
     model = ShiftNet(settings)
     if pretrained:
         state_dict = torch.load('pth/shiftnet19-d372c4d2.pth')
-        # state_dict = load_state_dict_from_url(model_urls['shiftnet19'],
-        #                                       progress=progress)
         model.load_state_dict(state_dict)
 
     return model
-
-def convert_shiftnet19(model, w_sfs, w_move_terms, w_move_group, w_stat_terms, w_stat_group,
-                       d_move_terms, d_move_group, d_stat_terms, d_stat_group,
-                       data_stationary, fuse_bn=False, quant_func='hese'):
-        layers = []
-        curr_layer = 0
-        if quant_func == 'hese':
-            wqf = booth.booth_cuda.radix_2_mod
-            dqf = booth.Radix2ModGroup
-        elif quant_func == 'binary':
-            wqf = booth.booth_cuda.binary
-            dqf = booth.BinaryGroup
-        else:
-            raise RuntimeError('quant_func: {} not found.'.format(quant_func))
-
-        for i, layer in enumerate(model.features):
-            if isinstance(layer, nn.Conv2d):
-                if fuse_bn:
-                    layer = fuse(layer, model.features[i+1])
-                    
-                if layer.weight.shape[1] <= 3:
-                    pass
-                    # layer.weight.data = wqf(layer.weight.data, w_sfs[curr_layer], 1, 3)
-                elif curr_layer < data_stationary: 
-                    layer.weight.data = wqf(layer.weight.data, w_sfs[curr_layer],
-                                            w_stat_group, w_stat_terms)
-                else:
-                    layer.weight.data = wqf(layer.weight.data, w_sfs[curr_layer],
-                                            w_move_group, w_move_terms)
-
-            elif isinstance(layer, shift.Shift):
-                if i == len(model.features) - 1:
-                    pass
-                elif curr_layer < data_stationary:
-                    layer = nn.Sequential(
-                            layer,
-                            dqf(2**-7, d_move_group, d_move_terms),
-                        )
-                else:
-                    layer = nn.Sequential(
-                            layer,
-                            dqf(2**-7, d_stat_group, d_stat_terms),
-                        )
- 
-            if not isinstance(layer, nn.BatchNorm2d) or not fuse_bn:
-                layers.append(layer)
-
-            if isinstance(layer, nn.Conv2d):
-                curr_layer += 1
-
-        model.features = nn.Sequential(*layers)
-
-        return model
-
-def convert_value_shiftnet19(model, w_move_terms, w_move_group, w_stat_values, w_stat_group,
-                             d_move_terms, d_move_group, d_stat_values, d_stat_group,
-                             data_stationary):
-        layers = []
-        curr_layer = 0
-        for i, layer in enumerate(model.features):
-            if isinstance(layer, nn.Conv2d):
-                layer = fuse(layer, model.features[i+1])
-                if curr_layer < data_stationary: 
-                    # ignore first layer (usually smaller than group size)
-                    if layer.weight.shape[1] > 3:
-                        layer.weight.data = booth.booth_cuda.value_group(layer.weight.data,
-                                                                         w_stat_group, w_stat_values)
-                else:
-                    layer.weight.data = booth.booth_cuda.radix_2_mod(layer.weight.data, 2**-15,
-                                                                     w_move_group, w_move_terms)
-            elif isinstance(layer, nn.ReLU):
-                if i == len(model.features) - 1:
-                    pass
-                elif curr_layer < data_stationary:
-                    layer = nn.Sequential(
-                            nn.ReLU(inplace=True),
-                            booth.Radix2ModGroup(2**-15, d_move_group, d_move_terms),
-                        )
-                else:
-                    layer = nn.Sequential(
-                            nn.ReLU(inplace=True),
-                            booth.ValueGroup(d_stat_group, d_stat_values),
-                        )
- 
-            if not isinstance(layer, nn.BatchNorm2d):
-                layers.append(layer)
-
-            if isinstance(layer, nn.Conv2d):
-                curr_layer += 1
-        model.features = nn.Sequential(*layers)
-
-        return model
