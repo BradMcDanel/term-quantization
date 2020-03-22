@@ -184,12 +184,14 @@ __global__ void radix_2_mod_cuda_kernel(const scalar_t *__restrict__ input,
   const int32_t WH = W * H;
   const int32_t b = idx / CWH;
   const int32_t c = (idx - b * CWH) / WH;
-  const int32_t w = (idx - b * CWH - c * WH) / W;
+  const int32_t w = (idx - b * CWH - c * WH) / H;
   const int32_t h = idx - b * CWH - c * WH - w * H;
   const int32_t base_offset = b * CWH + w * W + h;
+  const int32_t max_size = int(ceilf(C / float(group_size)));
   int32_t gidx;
 
-  if (c < (C / group_size)) {
+  if (b < B && c < max_size && w < W && h < H) {
+    // printf("%d %d %d %d\n", b, c, w, h);
     int32_t term_idx[MAX_GROUP_SIZE];
     int32_t num_terms[MAX_GROUP_SIZE];
     int32_t terms[MAX_GROUP_SIZE * MAX_BOOTH_SIZE];
@@ -311,9 +313,12 @@ __global__ void group_cuda_kernel(const scalar_t *__restrict__ input,
   const int32_t w = (idx - b * CWH - c * WH) / W;
   const int32_t h = idx - b * CWH - c * WH - w * H;
   const int32_t base_offset = b * CWH + w * W + h;
+  const int32_t max_size = int(C / (group_size + 0.5));
   int32_t gidx;
 
-  if (c < (C / group_size)) {
+
+
+  if (c < max_size) {
     int32_t term_idx[MAX_GROUP_SIZE];
     int32_t num_terms[MAX_GROUP_SIZE];
     int32_t terms[MAX_GROUP_SIZE * MAX_BOOTH_SIZE];

@@ -7,7 +7,10 @@ import shutil
 import math
 
 import msgpack
+import PIL
 from PIL import Image
+
+from efficientnet_pytorch import EfficientNet
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 import torch
@@ -166,14 +169,27 @@ def get_imagenet(args, train_name='ILSVRC-train.bin', num_train=1281167, num_val
             # going to evaluate the model on the validation set (saves times)
             train_dataset, train_loader = None, None
 
-        val_dataset = InMemoryImageNet(val_path, num_val,
-                                transforms=transforms.Compose([
-                                    msgpack_load,
-                                    transforms.Resize(256),
-                                    transforms.CenterCrop(224),
-                                    transforms.ToTensor(),
-                                    normalize,
-                                ]))
+        if 'efficientnet' in args.arch:
+            name = args.arch.replace('_', '-')
+            image_size = EfficientNet.get_image_size(name)
+            val_dataset = InMemoryImageNet(val_path, num_val,
+                                    transforms=transforms.Compose([
+                                        msgpack_load,
+                                        transforms.Resize(image_size, interpolation=PIL.Image.BICUBIC),
+                                        transforms.CenterCrop(image_size),
+                                        transforms.ToTensor(),
+                                        normalize,
+                                    ]))
+            print('using imagesize', image_size)
+        else:
+            val_dataset = InMemoryImageNet(val_path, num_val,
+                                    transforms=transforms.Compose([
+                                        msgpack_load,
+                                        transforms.Resize(256),
+                                        transforms.CenterCrop(224),
+                                        transforms.ToTensor(),
+                                        normalize,
+                                    ]))
         val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size,
                                                  shuffle=False, drop_last=False,
                                                  num_workers=args.workers)

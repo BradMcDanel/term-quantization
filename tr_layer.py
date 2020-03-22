@@ -39,8 +39,6 @@ def profile_tensor(w, err_tol):
     from itertools import product
     group_sizes = [16]
     term_factors = [0.5, 0.75, 0.875, 1, 1.125, 1.25, 1.375, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3.0]
-    # bit_settings = [2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16]
-    # bit_settings = [6, 7, 8, 9, 10]
     bit_settings = [10]
     settings = product(bit_settings, group_sizes, term_factors)
 
@@ -56,14 +54,13 @@ def profile_tensor(w, err_tol):
     print('Could not find setting below err_tol: ', err_tol)
     assert False
 
-def mse_profile(hist, minv, maxv, bit_width):
+def mse_profile(hist, minv, maxv, bit_width, terms):
     x = torch.linspace(minv, maxv, len(hist)).cuda()
-    sfs = (1 / torch.linspace(1e-8, maxv, 2048)).tolist()
+    sfs = torch.linspace(1e-8, maxv, 2048).tolist()
     errs = []
     for sf in sfs:
-        max_xq = 2**(bit_width - 1)
-        xq = linear_quantize_clamp(x, sf, -max_xq, max_xq)
-        xh = linear_dequantize(xq, sf)
+        xh = booth_cuda.radix_2_mod(x.view(-1, 1, 1, 1), sf, bit_width, 1, terms)
+        xh = xh.view(-1)
         err = (hist * (x - xh)**2).sum()
         errs.append(err)
 
@@ -72,42 +69,40 @@ def mse_profile(hist, minv, maxv, bit_width):
 
 
 class LinearQuantize(nn.Module):
-    def __init__(self, data_bits):
+    def __init__(self, data_bits, data_terms):
         super(LinearQuantize, self).__init__()
         self.sf = 1
-        self.num_bins = 2048
-        self.minv = -6
-        self.maxv = 6
+        self.num_bins = 8192
+        self.minv = -50
+        self.maxv = 50
         self.register_buffer('hist_bins', torch.Tensor(self.num_bins).zero_())
         self.tracking = True
         self.data_bits = data_bits
+        self.data_terms = data_terms
     
     def forward(self, x):
-        max_xq = 2**(self.data_bits - 1)
-
         if self.tracking:
             self.hist_bins += torch.histc(x, self.num_bins, self.minv,
                                           self.maxv)
             return x
 
-        xq = linear_quantize_clamp(x, self.sf, -max_xq, max_xq)
-        return linear_dequantize(xq, self.sf)
+        return booth_cuda.radix_2_mod(x, self.sf, self.data_bits, 1, self.data_terms)
     
     def finish_tracking(self):
         self.sf = mse_profile(self.hist_bins, self.minv, self.maxv,
-                              self.data_bits)
+                              self.data_bits, self.data_terms)
         self.tracking = False
-        
 
 class TRConv2dLayer(nn.Module):
-    def __init__(self, conv_layer, data_bits=8, weight_bits=8,
+    def __init__(self, conv_layer, data_bits=8, data_terms=4, weight_bits=8,
                  group_size=1, num_terms=8):
         super(TRConv2dLayer, self).__init__()
         device = conv_layer.weight.device
-        self.input_quant = LinearQuantize(data_bits).to(device)
+        self.data_bits = data_bits
+        self.data_terms = data_terms
+        self.input_quant = LinearQuantize(data_bits, data_terms).to(device)
         self.group_size = group_size
         self.num_terms = num_terms
-        self.data_bits = data_bits
         self.weight_bits = weight_bits
         w = conv_layer.weight
         max_wq = 2**(self.weight_bits - 1)

@@ -31,14 +31,33 @@ import json
 import booth
 import models
 import util
-plt = util.import_plt_settings(local_display=False)
 
 def compute_avg_terms(tr_params):
     alphas = []
-    for weight_bits, group_size, num_terms in tr_params[1:]:
-        alphas.append(num_terms / group_size)
+    for weight_bits, group_size, weight_terms in tr_params[1:]:
+        alphas.append(weight_terms / group_size)
 
     return sum(alphas) / len(alphas)
+
+def eval_model(args, model, weight_bits, group_size, weight_terms, data_bits,
+               data_terms):
+    # replace Conv2d with TRConv2dLayer
+    tr_params = models.static_conv_layer_settings(model, weight_bits,
+                                                  group_size, weight_terms)
+    avg_terms = compute_avg_terms(tr_params)
+    qmodel = models.convert_model(model, tr_params, data_bits, data_terms)
+
+    # compute activation scale factors
+    # _ = util.validate(val_loader, qmodel, criterion, args, verbose=args.verbose, pct=0.05)
+    models.set_tr_tracking(qmodel, False)
+
+    # evaluate model performance
+    # _, acc = util.validate(val_loader, qmodel, criterion, args, verbose=args.verbose)
+    tmacs, params = models.get_model_ops(qmodel)
+
+    return 0, tmacs, 0, 0
+
+    return acc.item(), tmacs, avg_terms, params
 
 
 model_names = sorted(name for name in models.__dict__
@@ -70,63 +89,74 @@ parser.add_argument('-v', '--verbose', action='store_true', help='verbose flag')
 
 if __name__=='__main__':
     args = parser.parse_args()
-    train_loader, train_sampler, val_loader = util.get_imagenet(args, 'ILSVRC-train-chunk.bin',
-                                                                num_train=2500, num_val=50000)
+    # train_loader, train_sampler, val_loader = util.get_imagenet(args, 'ILSVRC-train-chunk.bin',
+    #                                                             num_train=2500, num_val=50000)
     criterion = nn.CrossEntropyLoss().cuda(args.gpu)
     model = models.__dict__[args.arch](pretrained=True).cuda(args.gpu)
 
     results = {
-        'static': {
+        'quant': {
+            'accs': [],
+            'tmacs': [],
             'avg_terms': [],
-            'accs': []
+            'params': [],
         },
-        'dynamic': {
+        'tr-data2': {
+            'accs': [],
+            'tmacs': [],
             'avg_terms': [],
-            'accs': []
+            'params': [],
+        },
+        'tr-data3': {
+            'accs': [],
+            'tmacs': [],
+            'avg_terms': [],
+            'params': [],
+        },
+        'tr-data4': {
+            'accs': [],
+            'tmacs': [],
+            'avg_terms': [],
+            'params': [],
         }
     }
 
-    # Static settings
-    static_terms = [16, 20, 24, 28, 32]
-    for num_terms in static_terms:
-        # replace Conv2d with TRConv2dLayer
-        tr_params = models.static_conv_layer_settings(model, 10, 16, num_terms)
-        # pprint(tr_params)
-        avg_terms = compute_avg_terms(tr_params)
-        qmodel = models.convert_model(model, tr_params, 9)
+    # Traditional Quantization Settings
+    weight_bits = 9
+    group_size = 1
+    weight_terms = 9
+    data_bits = 9
+    data_terms = 9
+    weight_bit_settings = [6, 7, 8, 9]
+    for weight_bits in weight_bit_settings:
+        res = eval_model(args, model, weight_bits, group_size, weight_terms,
+                         data_bits, data_terms)
+        acc, tmacs, avg_terms, params = res
+        # print(acc)
+        print(weight_bits, tmacs)
+        results['quant']['accs'].append(acc)
+        results['quant']['tmacs'].append(tmacs)
+        results['quant']['avg_terms'].append(avg_terms)
+        results['quant']['params'].append(params)
 
-        # compute activation scale factors
-        _, acc = util.validate(val_loader, qmodel, criterion, args, verbose=args.verbose, pct=0.05)
-        models.set_tr_tracking(qmodel, False)
+    # Term Revealing Settings
+    weight_bits = 9
+    group_size = 8
+    data_bits = 9
+    data_term_settings = [2, 3, 4]
+    weight_term_settings = [12, 16, 20, 24]
+    for data_terms in data_term_settings:
+        key = 'tr-data{}'.format(data_terms)
+        for weight_terms in weight_term_settings:
+            res = eval_model(args, model, weight_bits, group_size,
+                             weight_terms, data_bits, data_terms)
+            acc, tmacs, avg_terms, params = res
+            print(data_terms, weight_terms, tmacs)
+            results[key]['accs'].append(acc)
+            results[key]['tmacs'].append(tmacs)
+            results[key]['avg_terms'].append(avg_terms)
+            results[key]['params'].append(params)
 
-        # evaluate model performance
-        _, acc = util.validate(val_loader, qmodel, criterion, args, verbose=args.verbose)
-        print(avg_terms, acc.item())
-        results['static']['avg_terms'].append(avg_terms)
-        results['static']['accs'].append(acc.item())
-
-
-    # Dynamic settings
-    err_tols = [0.0032, 0.0028, 0.0024, 0.002, 0.0016, 0.0012, 0.0008, 0.0004]
-    for err_tol in err_tols:
-        # replace Conv2d with TRConv2dLayer
-        tr_params = models.profile_conv_layers(model, err_tol=err_tol)
-        # print(err_tol)
-        # pprint(tr_params)
-        avg_terms = compute_avg_terms(tr_params)
-        qmodel = models.convert_model(model, tr_params, 9)
-
-        # compute activation scale factors
-        _, acc = util.validate(val_loader, qmodel, criterion, args, verbose=args.verbose, pct=0.05)
-        models.set_tr_tracking(qmodel, False)
-
-        # evaluate model performance
-        _, acc = util.validate(val_loader, qmodel, criterion, args, verbose=args.verbose)
-        print(avg_terms, acc.item())
-        results['dynamic']['avg_terms'].append(avg_terms)
-        results['dynamic']['accs'].append(acc.item())
-
-
-
+    assert False
     with open('data/{}-results.txt'.format(args.arch), 'w') as fp:
         json.dump(results, fp)
