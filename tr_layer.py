@@ -69,3 +69,45 @@ class TRConv2dLayer(nn.Module):
             self.input_quant.finish_tracking()
         else:
             self.input_quant.tracking = True
+
+class TRLSTMLayer(nn.Module):
+    def __init__(self, lstm_layer, data_bits=8, data_terms=4, weight_bits=8,
+                 group_size=1, num_terms=8):
+        super(TRLSTMLayer, self).__init__()
+        device = lstm_layer.weight_ih_l0.device
+        self.data_bits = data_bits
+        self.data_terms = data_terms
+        self.input_quant = LinearQuantize(data_bits, data_terms).to(device)
+        self.group_size = group_size
+        self.num_terms = num_terms
+        self.weight_bits = weight_bits
+
+        # ih_l0
+        w = lstm_layer.weight_ih_l0
+        max_wq = 2**(self.weight_bits - 1)
+        self.w_sf = w.abs().max().item() / max_wq
+        wq = tr_cuda.tr(w, self.w_sf, weight_bits, self.group_size, self.num_terms)
+        # print(w - wq)
+        # assert False
+        lstm_layer.weight_ih_l0 = nn.Parameter(wq)
+
+        # hh_l0
+        w = lstm_layer.weight_hh_l0
+        max_wq = 2**(self.weight_bits - 1)
+        self.w_sf = w.abs().max().item() / max_wq
+        wq = tr_cuda.tr(w, self.w_sf, weight_bits, self.group_size, self.num_terms)
+        lstm_layer.weight_hh_l0 = nn.Parameter(wq)
+
+        self.lstm = lstm_layer
+
+    def forward(self, x):
+        B, C = x.shape
+        x = x.view(B, C, 1, 1)
+        xq = self.input_quant(x)
+        return self.lstm(xq).view(B, C)
+
+    def tracking(self, tracking):
+        if not tracking:
+            self.input_quant.finish_tracking()
+        else:
+            self.input_quant.tracking = True
