@@ -21,20 +21,23 @@ def eval_model(args, model, weight_bits, group_size, weight_terms, data_bits,
     avg_terms = compute_avg_terms(tr_params)
     qmodel = models.convert_model(model, tr_params, data_bits, data_terms)
 
+    qmodel = nn.DataParallel(qmodel)
+
     # compute activation scale factors
     _ = util.validate(val_loader, qmodel, criterion, args, verbose=args.verbose, pct=0.05)
     models.set_tr_tracking(qmodel, False)
+
 
     # evaluate model performance
     _, acc = util.validate(val_loader, qmodel, criterion, args, verbose=args.verbose)
     tmacs, params = models.get_model_ops(qmodel)
 
-    return acc.item(), tmacs, avg_terms, params
+    return acc, tmacs, avg_terms, params
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
-    parser.add_argument('data', metavar='DIR', help='path to dataset')
+    parser.add_argument('val_dir', help='path to validation data folder')
     parser.add_argument('-a', '--arch', metavar='ARCH', default='alexnet',
                         choices=models.model_names(),
                         help='model architecture: ' +
@@ -54,8 +57,7 @@ if __name__ == '__main__':
     parser.add_argument('-v', '--verbose', action='store_true', help='verbose flag')
 
     args = parser.parse_args()
-    train_loader, train_sampler, val_loader = util.get_imagenet(args, 'ILSVRC-train-chunk.bin',
-                                                                num_train=2500, num_val=50000)
+    val_loader = util.get_imagenet_validation(args)
     criterion = nn.CrossEntropyLoss().cuda(args.gpu)
     model = models.__dict__[args.arch](pretrained=True).cuda(args.gpu)
 

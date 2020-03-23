@@ -1,139 +1,39 @@
-import warnings
-import pickle
-import io
 import time
-import os
 
-import msgpack
 import PIL
-from PIL import Image
-
 from efficientnet_pytorch import EfficientNet
+import torch
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
-import torch
-from torch.utils.data.dataset import Dataset
 
-def get_imagenet(args, train_name='ILSVRC-train.bin', num_train=1281167, num_val=50000):
-    ### begin custom data loader
-    # using custom msgpack data loader due to slow disk, replace with standard
-    # pytorch ImageFolder loader for equivalent results (shown below in else)
-    if args.msgpack_loader:
-        def msgpack_load(x):
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                x = Image.open(io.BytesIO(x)).convert('RGB')
-            return x
 
-        class InMemoryImageNet(Dataset):
-            def __init__(self, path, num_samples, transforms):
-                self.path = path
-                self.num_samples = num_samples
-                self.transforms = transforms
-                self.samples = []
-                f = open(self.path, "rb")
-                for i, sample in enumerate(msgpack.Unpacker(f, use_list=False, raw=True)):
-                    x, label = sample
-                    x = pickle.loads(x)
-                    self.samples.append((x, label))
-                    if i == self.num_samples - 1:
-                        break
-                f.close()
-                
-            def __getitem__(self, index):
-                x, y = self.samples[index]
-                x = self.transforms(x)
-                return (x, y)
+def get_imagenet_validation(args):
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                     std=[0.229, 0.224, 0.225])
 
-            def __len__(self):
-                return self.num_samples
+    if 'efficientnet' in args.arch:
+        image_size = EfficientNet.get_image_size(args.arch.replace('_', '-'))
+        val_transforms = transforms.Compose([
+            transforms.Resize(image_size, interpolation=PIL.Image.BICUBIC),
+            transforms.CenterCrop(image_size),
+            transforms.ToTensor(),
+            normalize,
+        ])
+    else:
+        val_transforms = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            transforms.ToTensor(),
+            normalize,
+        ])
 
-        train_path = os.path.join(args.data, 'imagenet-msgpack', train_name)
-        val_path = os.path.join(args.data, 'imagenet-msgpack', 'ILSVRC-val.bin')
-        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                        std=[0.229, 0.224, 0.225])
-        if not args.evaluate:
-            train_dataset = InMemoryImageNet(train_path, num_train,
-                                    transforms=transforms.Compose([
-                                        msgpack_load,
-                                        transforms.RandomResizedCrop(224),
-                                        transforms.RandomHorizontalFlip(),
-                                        transforms.ToTensor(),
-                                        normalize,
-                                    ]))
-            train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size,
-                                                       shuffle=True, drop_last=False,
-                                                       num_workers=args.workers)
-            train_loader.num_samples = num_train
-        else:
-            # do not bother loading train_dataset into memory if we are just
-            # going to evaluate the model on the validation set (saves times)
-            train_dataset, train_loader = None, None
+    val_loader = torch.utils.data.DataLoader(
+        datasets.ImageFolder(args.val_dir, val_transforms),
+        batch_size=args.batch_size, shuffle=False,
+        num_workers=args.workers, pin_memory=True)
 
-        if 'efficientnet' in args.arch:
-            name = args.arch.replace('_', '-')
-            image_size = EfficientNet.get_image_size(name)
-            val_dataset = InMemoryImageNet(val_path, num_val,
-                                    transforms=transforms.Compose([
-                                        msgpack_load,
-                                        transforms.Resize(image_size, interpolation=PIL.Image.BICUBIC),
-                                        transforms.CenterCrop(image_size),
-                                        transforms.ToTensor(),
-                                        normalize,
-                                    ]))
-            print('using imagesize', image_size)
-        else:
-            val_dataset = InMemoryImageNet(val_path, num_val,
-                                    transforms=transforms.Compose([
-                                        msgpack_load,
-                                        transforms.Resize(256),
-                                        transforms.CenterCrop(224),
-                                        transforms.ToTensor(),
-                                        normalize,
-                                    ]))
-        val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size,
-                                                 shuffle=False, drop_last=False,
-                                                 num_workers=args.workers)
-        val_loader.num_samples = num_val
-        train_sampler = None
-    ### end custom data loader
+    return val_loader
 
-    # Use standard PyTorch Dataloader
-    else:  
-        traindir = os.path.join(args.data, 'train')
-        valdir = os.path.join(args.data, 'val')
-        normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                                         std=[0.229, 0.224, 0.225])
-
-        train_dataset = datasets.ImageFolder(
-            traindir,
-            transforms.Compose([
-                transforms.RandomResizedCrop(224),
-                transforms.RandomHorizontalFlip(),
-                transforms.ToTensor(),
-                normalize,
-            ]))
-
-        if args.distributed:
-            train_sampler = torch.utils.data.distributed.DistributedSampler(train_dataset)
-        else:
-            train_sampler = None
-
-        train_loader = torch.utils.data.DataLoader(
-            train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None),
-            num_workers=args.workers, pin_memory=True, sampler=train_sampler)
-
-        val_loader = torch.utils.data.DataLoader(
-            datasets.ImageFolder(valdir, transforms.Compose([
-                transforms.Resize(256),
-                transforms.CenterCrop(224),
-                transforms.ToTensor(),
-                normalize,
-            ])),
-            batch_size=args.batch_size, shuffle=False,
-            num_workers=args.workers, pin_memory=True)
-
-    return train_loader, train_sampler, val_loader
 
 def validate(val_loader, model, criterion, args, verbose=True, pct=1.0):
     batch_time = AverageMeter('Time', ':6.3f')
@@ -143,7 +43,7 @@ def validate(val_loader, model, criterion, args, verbose=True, pct=1.0):
 
     # switch to evaluate mode
     model.eval()
-    eval_samples = round(pct * val_loader.dataset.num_samples)
+    eval_samples = round(pct * len(val_loader.dataset.targets))
     curr_samples = 0
 
     with torch.no_grad():
