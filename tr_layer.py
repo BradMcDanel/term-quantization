@@ -70,6 +70,37 @@ class TRConv2dLayer(nn.Module):
         else:
             self.input_quant.tracking = True
 
+class TRLinearLayer(nn.Module):
+    def __init__(self, linear_layer, data_bits=8, data_terms=4, weight_bits=8,
+                 group_size=1, num_terms=8):
+        super(TRLinearLayer, self).__init__()
+        device = linear_layer.weight.device
+        self.data_bits = data_bits
+        self.data_terms = data_terms
+        self.input_quant = LinearQuantize(data_bits, data_terms).to(device)
+        self.group_size = group_size
+        self.num_terms = num_terms
+        self.weight_bits = weight_bits
+        w = linear_layer.weight
+        max_wq = 2**(self.weight_bits - 1)
+        self.w_sf = w.abs().max().item() / max_wq
+        w = tr_cuda.tr(w, self.w_sf, weight_bits, self.group_size, self.num_terms)
+        linear_layer.weight = nn.Parameter(w)
+        self.linear = linear_layer
+
+    def forward(self, x):
+        B, C = x.shape
+        x = x.view(B, C, 1, 1)
+        xq = self.input_quant(x)
+        xq = xq.view(B, C)
+        return self.linear(xq)
+
+    def tracking(self, tracking):
+        if not tracking:
+            self.input_quant.finish_tracking()
+        else:
+            self.input_quant.tracking = True
+
 class TRLSTMLayer(nn.Module):
     def __init__(self, lstm_layer, data_bits=8, data_terms=4, weight_bits=8,
                  group_size=1, num_terms=8):
@@ -87,8 +118,6 @@ class TRLSTMLayer(nn.Module):
         max_wq = 2**(self.weight_bits - 1)
         self.w_sf = w.abs().max().item() / max_wq
         wq = tr_cuda.tr(w, self.w_sf, weight_bits, self.group_size, self.num_terms)
-        # print(w - wq)
-        # assert False
         lstm_layer.weight_ih_l0 = nn.Parameter(wq)
 
         # hh_l0
@@ -100,11 +129,11 @@ class TRLSTMLayer(nn.Module):
 
         self.lstm = lstm_layer
 
-    def forward(self, x):
-        B, C = x.shape
-        x = x.view(B, C, 1, 1)
-        xq = self.input_quant(x)
-        return self.lstm(xq).view(B, C)
+    def forward(self, emb, hidden):
+        embq = self.input_quant(emb)
+        hidden_qs = tuple(self.input_quant(h) for h in hidden)
+
+        return self.lstm(embq, hidden_qs)
 
     def tracking(self, tracking):
         if not tracking:
