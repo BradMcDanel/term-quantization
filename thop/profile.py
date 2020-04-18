@@ -72,8 +72,9 @@ def profile(model, inputs, custom_ops=None, verbose=True):
         m.register_buffer('total_ops', torch.zeros(1))
         m.register_buffer('total_params', torch.zeros(1))
 
-        for p in m.parameters():
-            m.total_params += torch.Tensor([p.numel()])
+        # Specify yourself instead of hardcoded
+        # for p in m.parameters():
+        #     m.total_params += torch.Tensor([p.numel()])
 
         m_type = type(m)
         fn = None

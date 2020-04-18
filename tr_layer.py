@@ -1,8 +1,44 @@
+import math
+
 import torch
 import torch.nn as nn
 from torch.utils.cpp_extension import load
 
 tr_cuda = load('tr_cuda', ['kernels/tr_cuda.cpp', 'kernels/tr_cuda_kernel.cu'])
+
+def hese(number):
+    '''
+    Applies HESE encoding on a number.
+    Returns the power-of-two exponents in the encoding.
+    '''
+    char_number = bin(number).split('b')[1]
+    if bin(number)[0] == '-':
+        sign = -1
+    else:
+        sign = 1
+    char_number = '0' + char_number + '0'
+    char_number = char_number[::-1]
+    exponents = []
+    for i in range(len(char_number) - 1):
+        b1 = char_number[i]
+        b2 = char_number[i+1]
+        if b1 == b2:
+            continue
+        if b1 == '0':
+            exponents.append(-sign*2**i)
+        else:
+            exponents.append(sign*2**i)
+ 
+    # merging neighbors hack
+    keep_exponents = []
+    for i in range(0, len(exponents), 2):
+        if exponents[i+1] == -(2*exponents[i]):
+            keep_exponents.append(-exponents[i])
+        else:
+            keep_exponents.append(exponents[i])
+            keep_exponents.append(exponents[i+1])
+
+    return keep_exponents
 
 def mse_profile(hist, minv, maxv, bit_width, terms):
     x = torch.linspace(minv, maxv, len(hist)).cuda()
@@ -16,6 +52,28 @@ def mse_profile(hist, minv, maxv, bit_width, terms):
 
     min_idx = torch.argmin(torch.Tensor(errs)).item()
     return sfs[min_idx]
+
+
+def compute_compressed_hese(w, sf, weight_terms):
+    exp_bits = math.ceil(math.log2(weight_terms))
+    bit_width = exp_bits + 2 # 1 for sign, 1 for barrier
+    w = (w / sf).int()
+    # bits = sum([bit_width * max(1, len(hese(wi))) for wi in w.view(-1).tolist()])
+    bits = sum([bit_width * len(hese(wi)) for wi in w.view(-1).tolist()])
+    return bits
+
+
+def set_tr_tracking(model, tracking):
+    for name, layer in model.named_modules():
+        if isinstance(layer, (TRLinearLayer, TRLSTMLayer, TRConv2dLayer)):
+            module_keys = name.split('.')
+            module = model
+            for k in module_keys[:-1]:
+                module = module._modules[k]
+
+            module._modules[module_keys[-1]].tracking(tracking)
+
+    return model
 
 class LinearQuantize(nn.Module):
     def __init__(self, data_bits, data_terms):
@@ -34,8 +92,11 @@ class LinearQuantize(nn.Module):
             self.hist_bins += torch.histc(x, self.num_bins, self.minv,
                                           self.maxv)
             return x
-
-        return tr_cuda.tr(x, self.sf, self.data_bits, 1, self.data_terms)
+       
+        dims = x.shape
+        x = x.view(1, -1, 1, 1)
+        x = tr_cuda.tr(x, self.sf, self.data_bits, 1, self.data_terms)
+        return x.view(*dims)
 
     def finish_tracking(self):
         self.sf = mse_profile(self.hist_bins, self.minv, self.maxv,
@@ -89,11 +150,8 @@ class TRLinearLayer(nn.Module):
         self.linear = linear_layer
 
     def forward(self, x):
-        B, C = x.shape
-        x = x.view(B, C, 1, 1)
         xq = self.input_quant(x)
-        xq = xq.view(B, C)
-        return self.linear(xq)
+        return self.linear(x)
 
     def tracking(self, tracking):
         if not tracking:
@@ -128,6 +186,7 @@ class TRLSTMLayer(nn.Module):
         lstm_layer.weight_hh_l0 = nn.Parameter(wq)
 
         self.lstm = lstm_layer
+        self.lstm.flatten_parameters()
 
     def forward(self, emb, hidden):
         embq = self.input_quant(emb)

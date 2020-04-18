@@ -1,4 +1,5 @@
 import time
+import os
 
 import PIL
 from efficientnet_pytorch import EfficientNet
@@ -28,7 +29,7 @@ def get_imagenet_validation(args):
         ])
 
     val_loader = torch.utils.data.DataLoader(
-        datasets.ImageFolder(args.val_dir, val_transforms),
+        datasets.ImageFolder(os.path.join(args.val_dir, 'imagenet', 'val'), val_transforms),
         batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
 

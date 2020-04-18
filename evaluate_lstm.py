@@ -1,48 +1,18 @@
 import argparse
 import math
 from copy import deepcopy
+import json
 
 import torch
 import torch.nn as nn
 
-import word_language_model.model as model
-import word_language_model.data as data
-from tr_layer import TRLSTMLayer
+import lstm_models.model as model
+import lstm_models.data as data
+from tr_layer import TRLSTMLayer, TRLinearLayer, set_tr_tracking
+import profile_model
 
 import sys
-sys.path.insert(0, './word_language_model')
-
-def get_model_ops(model):
-    def tr_lstm_ops(m, x, y):
-        x = x[0]
-
-        kernel_ops = 1
-
-        # N x Cout x H x W x  (Cin x Kw x Kh + bias)
-        total_ops = y.nelement() * m.linear.in_features
-
-        # convert to term ops
-        if m.group_size == 1:
-            weight_terms = min(m.num_terms, m.weight_bits)
-        else:
-            weight_terms = m.num_terms
-        data_terms = min(m.data_terms, m.data_bits)
-        alpha = weight_terms / m.group_size
-        total_ops = data_terms * alpha * total_ops
-        m.linear.total_ops += torch.Tensor([int(total_ops)])
-
-    dummy_input = torch.randn(1, 1, 28, 28).cuda()
-    custom_ops = {
-        TRLinearLayer: tr_linear_ops,
-        nn.Conv2d: thop.count_hooks.zero_ops,
-        nn.BatchNorm2d: thop.count_hooks.zero_ops,
-        nn.Linear: thop.count_hooks.zero_ops,
-        nn.AvgPool2d: thop.count_hooks.zero_ops,
-        nn.AdaptiveAvgPool2d: thop.count_hooks.zero_ops
-    }
-
-    return thop.profile(model, inputs=(dummy_input,), custom_ops=custom_ops)
-
+sys.path.insert(0, './lstm_models')
 
 def replace_lstm_layers(model, tr_params, data_bits, data_terms):
     curr_layer = 0
@@ -54,8 +24,12 @@ def replace_lstm_layers(model, tr_params, data_bits, data_terms):
                 module = module._modules[k]
 
             weight_bits, group_size, weight_terms = tr_params[curr_layer]
-            layer = TRLSTMLayer(layer, data_bits, data_terms, weight_bits,
-                                group_size, weight_terms)
+            if isinstance(layer, nn.LSTM):
+                layer = TRLSTMLayer(layer, data_bits, data_terms, weight_bits,
+                                    group_size, weight_terms)
+            elif isinstance(layer, nn.Linear):
+                layer = TRLinearLayer(layer, data_bits, data_terms, weight_bits,
+                                      group_size, weight_terms)
 
             module._modules[module_keys[-1]] = layer
             curr_layer += 1
@@ -78,16 +52,15 @@ def convert_model(model, tr_params, data_bits, data_terms):
     return replace_lstm_layers(model, tr_params, data_bits, data_terms)
 
 
-
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='PyTorch Wikitext-2 RNN/LSTM/GRU/Transformer Language Model')
-    parser.add_argument('--data', type=str, default='./word_language_model/data/wikitext-2',
+    parser.add_argument('--data', type=str, default='./lstm_models/data/wikitext-2/',
                         help='location of the data corpus')
     parser.add_argument('--model', type=str, default='LSTM',
                         help='type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU, Transformer)')
-    parser.add_argument('--emsize', type=int, default=200,
+    parser.add_argument('--emsize', type=int, default=650,
                         help='size of word embeddings')
-    parser.add_argument('--nhid', type=int, default=200,
+    parser.add_argument('--nhid', type=int, default=650,
                         help='number of hidden units per layer')
     parser.add_argument('--nlayers', type=int, default=2,
                         help='number of layers')
@@ -95,19 +68,17 @@ if __name__=='__main__':
                         help='initial learning rate')
     parser.add_argument('--clip', type=float, default=0.25,
                         help='gradient clipping')
-    parser.add_argument('--epochs', type=int, default=40,
-                        help='upper epoch limit')
     parser.add_argument('--batch_size', type=int, default=20, metavar='N',
                         help='batch size')
     parser.add_argument('--bptt', type=int, default=35,
                         help='sequence length')
-    parser.add_argument('--dropout', type=float, default=0.2,
+    parser.add_argument('--dropout', type=float, default=0.5,
                         help='dropout applied to layers (0 = no dropout)')
-    parser.add_argument('--tied', action='store_true',
+    parser.add_argument('--tied', action='store_false',
                         help='tie the word embedding and softmax weights')
     parser.add_argument('--seed', type=int, default=1111,
                         help='random seed')
-    parser.add_argument('--cuda', action='store_true',
+    parser.add_argument('--cuda', action='store_false',
                         help='use CUDA')
     parser.add_argument('--log-interval', type=int, default=200, metavar='N',
                         help='report interval')
@@ -115,6 +86,12 @@ if __name__=='__main__':
                         help='path to save the final model')
     parser.add_argument('--onnx-export', type=str, default='',
                         help='path to export the final model in onnx format')
+    parser.add_argument('--wb', nargs='+', type=int, help='weight bits')
+    parser.add_argument('--wt', nargs='+', type=int, help='weight terms')
+    parser.add_argument('--db', nargs='+', type=int, help='data bits')
+    parser.add_argument('--dt', nargs='+', type=int, help='data terms')
+    parser.add_argument('--gs', nargs='+', type=int, help='group sizes')
+    parser.add_argument('--out-file', help='Output file')
 
     parser.add_argument('--nhead', type=int, default=2,
                         help='the number of heads in the encoder/decoder of the transformer model')
@@ -142,7 +119,6 @@ if __name__=='__main__':
     else:
         model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.tied).to(device)
 
-    state_dict = torch.load('data/lstm.pt')
     model = torch.load('data/lstm.pt')
     criterion = nn.NLLLoss()
 
@@ -153,17 +129,6 @@ if __name__=='__main__':
             return h.detach()
         else:
             return tuple(repackage_hidden(v) for v in h)
-
-
-    # get_batch subdivides the source data into chunks of length args.bptt.
-    # If source is equal to the example output of the batchify function, with
-    # a bptt-limit of 2, we'd get the following two Variables for i = 0:
-    # ┌ a g m s ┐ ┌ b h n t ┐
-    # └ b h n t ┘ └ c i o u ┘
-    # Note that despite the name of the function, the subdivison of data is not
-    # done along the batch dimension (i.e. dimension 1), since that was handled
-    # by the batchify function. The chunks are along dimension 0, corresponding
-    # to the seq_len dimension in the LSTM.
 
     def get_batch(source, i):
         seq_len = min(args.bptt, len(source) - 1 - i)
@@ -176,24 +141,37 @@ if __name__=='__main__':
         model.eval()
         total_loss = 0.
         ntokens = len(corpus.dictionary)
-        if args.model != 'Transformer':
-            hidden = model.init_hidden(eval_batch_size)
+        hidden = model.init_hidden(eval_batch_size)
         with torch.no_grad():
             for i in range(0, data_source.size(0) - 1, args.bptt):
                 data, targets = get_batch(data_source, i)
-                if args.model == 'Transformer':
-                    output = model(data)
-                    output = output.view(-1, ntokens)
-                else:
-                    output, hidden = model(data, hidden)
-                    hidden = repackage_hidden(hidden)
+                output, hidden = model(data, hidden)
+                hidden = repackage_hidden(hidden)
                 total_loss += len(data) * criterion(output, targets).item()
         return total_loss / (len(data_source) - 1)
+    
 
-    tr_params = static_lstm_layer_settings(model, 4, 4, 4)
-    qmodel = convert_model(model, tr_params, 4, 4)
-    test_loss = evaluate(qmodel, test_data)
-    print('=' * 89)
-    print('| End of training | test loss {:5.2f} | test ppl {:8.2f}'.format(
-        test_loss, math.exp(test_loss)))
-    print('=' * 89)
+    settings = zip(args.wb, args.wt, args.db, args.dt, args.gs)
+
+    results = {'ppls': [], 'tmacs': [], 'param_bits': []}
+    for wb, wt, db, dt, gs in settings:
+        # Build model
+        tr_params = static_lstm_layer_settings(model, wb, gs, wt)
+        qmodel = convert_model(model, tr_params, db, dt)
+
+        # Profile
+        test_loss = evaluate(qmodel, test_data)
+        set_tr_tracking(qmodel, False)
+
+        # Evaluate
+        test_loss = evaluate(qmodel, test_data)
+        inputs = (get_batch(test_data, 0)[0], model.init_hidden(eval_batch_size))
+        tmacs, param_bits = profile_model.get_model_ops(qmodel, inputs=inputs)
+        ppl = math.exp(test_loss)
+        results['ppls'].append(ppl)
+        results['tmacs'].append(tmacs)
+        results['param_bits'].append(param_bits)
+        print(wb, wt, db, dt, gs, ppl, tmacs, param_bits)
+
+    with open(args.out_file, 'w') as fp:
+        json.dump(results, fp)
