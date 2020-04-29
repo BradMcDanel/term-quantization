@@ -125,3 +125,4 @@ if __name__=='__main__':
     plt.ylabel('Frequency (%)')
     plt.savefig('figures/term-group-dist.pdf', dpi=300, bbox_inches='tight')
     plt.clf()
+

@@ -119,7 +119,7 @@ if __name__=='__main__':
     else:
         model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.tied).to(device)
 
-    model = torch.load('data/lstm.pt')
+    model = torch.load('pretrained_models/lstm.pt')
     criterion = nn.NLLLoss()
 
     def repackage_hidden(h):

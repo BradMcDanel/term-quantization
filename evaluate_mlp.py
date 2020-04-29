@@ -65,7 +65,7 @@ if __name__ == '__main__':
         batch_size=args.test_batch_size, shuffle=True, **kwargs)
 
     model = MNISTMLP()
-    state_dict = torch.load('data/mnist_mlp.pt')
+    state_dict = torch.load('pretrained_models/mnist_mlp.pt')
     model.load_state_dict(state_dict)
 
     settings = zip(args.wb, args.wt, args.db, args.dt, args.gs)
