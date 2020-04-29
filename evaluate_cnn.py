@@ -1,6 +1,8 @@
 import argparse
 import json
+from copy import deepcopy
 
+import torch
 import torch.nn as nn
 
 import cnn_models
@@ -22,6 +24,11 @@ def eval_model(args, model, weight_bits, group_size, weight_terms, data_bits,
                                                       group_size, weight_terms)
     avg_terms = compute_avg_terms(tr_params)
     qmodel = cnn_models.convert_model(model, tr_params, data_bits, data_terms)
+    qmt = deepcopy(qmodel)
+    qmt.cuda()
+    x = torch.Tensor(1, 3, 224, 224).cuda()
+    tmacs, params = profile_model.get_model_ops(qmt, (x,))
+    print(tmacs)
 
     qmodel = nn.DataParallel(qmodel)
 
@@ -31,7 +38,6 @@ def eval_model(args, model, weight_bits, group_size, weight_terms, data_bits,
 
     # evaluate model performance
     _, acc = util.validate(val_loader, qmodel, criterion, args, verbose=args.verbose)
-    tmacs, params = profile_model.get_model_ops(qmodel, input_shape=(1, 3, 224, 224))
 
     return acc, tmacs, avg_terms, params
 
@@ -46,10 +52,6 @@ if __name__ == '__main__':
                         ' (default: resnet18)')
     parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
                         help='number of data loading workers (default: 4)')
-    parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
-                        help='evaluate model on validation set')
-    parser.add_argument('--msgpack-loader', dest='msgpack_loader', action='store_true',
-                        help='use custom msgpack dataloader')
     parser.add_argument('-b', '--batch-size', default=256, type=int,
                         metavar='N', help='mini-batch size (default: 256)')
     parser.add_argument('-p', '--print-freq', default=10, type=int,
@@ -100,8 +102,7 @@ if __name__ == '__main__':
         res = eval_model(args, model, weight_bits, group_size, weight_terms,
                          data_bits, data_terms)
         acc, tmacs, avg_terms, params = res
-        # print(acc)
-        print(weight_bits, tmacs)
+        print(tmacs, acc)
         results['quant']['accs'].append(acc)
         results['quant']['tmacs'].append(tmacs)
         results['quant']['avg_terms'].append(avg_terms)
@@ -119,12 +120,11 @@ if __name__ == '__main__':
             res = eval_model(args, model, weight_bits, group_size,
                              weight_terms, data_bits, data_terms)
             acc, tmacs, avg_terms, params = res
-            print(data_terms, weight_terms, tmacs)
+            print(tmacs, acc)
             results[key]['accs'].append(acc)
             results[key]['tmacs'].append(tmacs)
             results[key]['avg_terms'].append(avg_terms)
             results[key]['params'].append(params)
 
-    assert False
     with open('results/{}-results.txt'.format(args.arch), 'w') as fp:
         json.dump(results, fp)

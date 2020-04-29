@@ -14,10 +14,9 @@ from efficientnet_pytorch.utils import Conv2dStaticSamePadding
 
 import util
 from tr_layer import TRConv2dLayer
-from .shiftnet import shiftnet19
 
 def model_names():
-    return ['alexnet', 'vgg16_bn', 'resnet18', 'efficientnet_b0', 'shiftnet19', 'mobilenet_v2']
+    return ['alexnet', 'vgg16_bn', 'resnet18', 'efficientnet_b0', 'mobilenet_v2']
 
 def efficientnet_b0(pretrained=True):
     if pretrained:
