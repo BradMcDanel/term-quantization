@@ -27,6 +27,8 @@ torchvision==0.4.2
 
 `pretrained_models/` is used to store a pretrained MLP and LSTM model. Directions are provided to download these from google drive. Additionally, these can be trained (see below).
 
+`results/` contains JSON files of evaluated results used in the visualization.
+
 `thop/` is a fork of [PyTorch OpCounter](https://github.com/Lyken17/pytorch-OpCounter) with support added counting bitwise operations (i.e., number of term pair multiplications) as opposed to FLOPS.
 
 `verilog/` provides the verilog codebase implementing the term revealing system. This is used for the hardware evaluation.
@@ -78,7 +80,7 @@ To visualize the results across the MLP, LSTM, and CNNs comparing QT and TR, run
 
 ### Impact of Group Size and Group Budget
 
-To plot the group size and group budget settings for resnet18, run `python visualize/group_size_accuracy.py`, from the root folder. This will generate the comparison as `figures/group-size-accuracy.pdf`.
+To plot the group size and group budget settings for resnet18, run `python visualize/group_size.py`, from the root folder. This will generate the comparison as `figures/group-size-accuracy.pdf`.
 
 ### Layerwise Quantizaton Error
 
