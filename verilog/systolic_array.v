@@ -11,9 +11,9 @@ module j_systolic_array #(
 ) (
     input                                                           clk            ,
     input                                                           reset          ,
-    input  [   3:0] data_terms,
-    input  [   4:0] group_size,
-    input  [   6:0] group_budget,
+    input  [                                                   3:0] data_terms     ,
+    input  [                                                   4:0] group_size     ,
+    input  [                                                   6:0] group_budget   ,
     input  [                   8*NUM_COE_ARRAY*SUBARRAY_HEIGHT-1:0] accumulation_in,
     input  [NUM_COMBINED_TERMS*NUM_BIT_EXPONENT*SUBARRAY_WIDTH-1:0] dataflow_in    ,
     input  [                 NUM_COMBINED_TERMS*SUBARRAY_WIDTH-1:0] sign_flow_in   ,

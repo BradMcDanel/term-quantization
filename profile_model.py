@@ -47,9 +47,6 @@ def tr_linear_ops(m, x, y):
 
 def tr_lstm_ops(m, x, y):
     x = x[0]
-    # TODO: Implement!
-
-    # m.linear.total_ops += torch.Tensor([int(total_ops)])
 
 def get_model_ops(model, inputs):
     custom_ops = {

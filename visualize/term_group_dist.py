@@ -1,157 +1,127 @@
 import argparse
-import math
-import copy
-import os
-import random
-import shutil
-import time
-import warnings
-from collections import OrderedDict
-import pickle
-from itertools import product
 
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.parallel
-import torch.backends.cudnn as cudnn
-import torch.distributed as dist
-import torch.optim
-import torch.multiprocessing as mp
-import torch.utils.data
-from torch.utils.data.dataset import Dataset
-import torch.utils.data.distributed
-import torchvision.transforms as transforms
-import torchvision.datasets as datasets
-from torchvision.utils import make_grid, save_image
+import torch.nn.functional as F
 import numpy as np
-import json
 
+import cnn_models
+import tr_layer
 
-import booth
-import models
 import util
-plt = util.import_plt_settings(local_display=False)
-import matplotlib.lines as lines
-import matplotlib
+import visualize
+plt = visualize.import_plt_settings(local_display=True)
+import matplotlib.patches as patches
 
-def get_term_count(model, group_size, quant_func, minlength=None):
-    if quant_func == 'hese':
-        func = booth.num_hese_terms
-    else:
-        func = booth.num_binary_terms
-    x = model.features[24][0].x
-    w = model.features[24][1].weight.data
-    B, C, W, H = x.shape
-    F = w.shape[0]
-    x = x.permute(0, 2, 3, 1).contiguous().view(-1, C)
-    x_terms = func(x, 2**-7)
-    x_terms = x_terms.view(B*W*H, C)
-    w = w.view(F, C)
-    w_terms = func(w, w_sfs[12])
-    w_terms = w_terms.view(F, C)
+import bit_utils
 
-    all_res = []
-    for i in range(0, C//group_size):
-        start, end = i*group_size, (i+1)*group_size
-        res = torch.matmul(x_terms[:, start:end], w_terms[:, start:end].transpose(0, 1))
-        all_res.extend(res.view(-1).tolist())
 
-    all_res = np.array(all_res).astype(int)
+class Tracker(nn.Module):
+    def __init__(self):
+        super(Tracker, self).__init__()
+        self.x = None
 
-    if minlength is None:
-        return np.bincount(all_res)
-    else:
-        return np.bincount(all_res, minlength=minlength)
+    def forward(self, x):
+        self.x = x
+        return x
 
-model_names = sorted(name for name in models.__dict__
-    if name.islower() and not name.startswith("__")
-    and callable(models.__dict__[name]))
+def add_trackers(model):
+    curr_layer = 0
+    for name, layer in model.named_modules():
+        if isinstance(layer, tr_layer.TRConv2dLayer):
+            module_keys = name.split('.')
+            module = model
+            for k in module_keys[:-1]:
+                module = module._modules[k]
 
-parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
-parser.add_argument('data', metavar='DIR', help='path to dataset')
-parser.add_argument('-a', '--arch', metavar='ARCH', default='alexnet',
-                    choices=model_names,
-                    help='model architecture: ' +
-                        ' | '.join(model_names) +
-                        ' (default: resnet18)')
-parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
-                    help='number of data loading workers (default: 4)')
-parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
-                    help='evaluate model on validation set')
-parser.add_argument('--msgpack-loader', dest='msgpack_loader', action='store_true',
-                    help='use custom msgpack dataloader')
-parser.add_argument('-b', '--batch-size', default=256, type=int,
-                    metavar='N',
-                    help='mini-batch size (default: 256), this is the total '
-                         'batch size of all GPUs on the current node when '
-                         'using Data Parallel or Distributed Data Parallel')
-parser.add_argument('-p', '--print-freq', default=10, type=int,
-                    metavar='N', help='print frequency (default: 10)')
-parser.add_argument('--gpu', default=None, type=int, help='GPU id to use.')
+            layer = nn.Sequential(
+                Tracker(),
+                layer
+            )
+
+            module._modules[module_keys[-1]] = layer
+            curr_layer += 1
+
+    return model
 
 if __name__=='__main__':
+    parser = argparse.ArgumentParser(description='Group Distribution Example')
+    parser.add_argument('val_dir', help='path to validation data folder')
+    parser.add_argument('-a', '--arch', metavar='ARCH', default='alexnet',
+                        choices=cnn_models.model_names(),
+                        help='model architecture: ' +
+                        ' | '.join(cnn_models.model_names()) +
+                        ' (default: resnet18)')
+    parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
+                        help='number of data loading workers (default: 4)')
+    parser.add_argument('-b', '--batch-size', default=256, type=int,
+                        metavar='N', help='mini-batch size (default: 256)')
+    parser.add_argument('-p', '--print-freq', default=10, type=int,
+                        metavar='N', help='print frequency (default: 10)')
+    parser.add_argument('--gpu', default=0, type=int, help='GPU id to use.')
+    parser.add_argument('-v', '--verbose', action='store_true', help='verbose flag')
+
     args = parser.parse_args()
-    model = models.__dict__[args.arch](pretrained=True)
-    model.cuda()
-    train_loader, train_sampler, val_loader = util.get_imagenet(args, 'ILSVRC-train-chunk.bin',
-                                                                num_train=128, num_val=4)
+    val_loader = util.get_imagenet_validation(args)
+    criterion = nn.CrossEntropyLoss().cuda(args.gpu)
+    model = cnn_models.__dict__[args.arch](pretrained=True).cuda(args.gpu)
+    weight_bits = 9
+    group_size = 8
+    data_bits = 9
+    data_terms = 9
+    weight_terms = 9
+    group_size = 1
 
-    group_sizes = [1, 2, 4, 8, 16]
+    # replace Conv2d with TRConv2dLayer
+    tr_params = cnn_models.static_conv_layer_settings(model, weight_bits, group_size, weight_terms)
+    qmodel = cnn_models.convert_model(model, tr_params, data_bits, data_terms)
+    qmodel.cuda(args.gpu)
+    util.validate(val_loader, qmodel, criterion, args, verbose=args.verbose, pct=0.05)
+    tr_layer.set_tr_tracking(qmodel, False)
 
-    bcs = []
-    for group_size in group_sizes:
-        print(group_size)
-        qmodel = copy.deepcopy(model).cpu()
-        w_sfs = util.quantize_layers(qmodel, bits=8)
-        qmodel.cuda()
+    qmodel = add_trackers(qmodel)
+    util.validate(val_loader, qmodel, criterion, args, pct=0.001)
 
-        criterion = nn.CrossEntropyLoss().cuda()
-        util.add_average_trackers(qmodel, nn.Conv2d)
-        qmodel.cuda()
-        _, acc = util.validate(val_loader, qmodel, criterion, args, verbose=True)
+    layer = qmodel.layer2[0].downsample[0]
 
-        bc = get_term_count(qmodel, group_size, 'binary')
-        bcs.append(bc)
-    
+    # get x_bits
+    x = layer[0].x[:2]
+    xq = layer[1].input_quant(x)
+    xq_bits = bit_utils.expand_binary_bits(xq, layer[1].input_quant.sf)
+    B, C, W, H, xB = xq_bits.shape
+    xq_bits = xq_bits.permute(0, 4, 1, 2, 3).contiguous()
+    xq_bits = xq_bits.view(-1, C, W, H)
 
-    fig, axes = plt.subplots(5, figsize=(5, 4.5), sharex=True)
-    yticks = [(0, 25), (0, 12), (0, 3), (0, 2), (0, 1)]
-    for i, (ax, bc, group_size, ytick) in enumerate(zip(axes, bcs, group_sizes, yticks)):
-        bc = 100. * (bc / bc.sum())
-        max_x = len(bcs[-1]) + 5
-        max_y = max(bc) * 0.75
-        long_tail = np.arange(len(bc))[np.cumsum(bc) > 99][0]
-        last_x = len(bc)
+    # get w_bits
+    wq_bits = bit_utils.expand_binary_bits(layer[1].conv.weight, layer[1].w_sf)
+    N, C, kW, kH, wB = wq_bits.shape
+    wq_bits = wq_bits.permute(0, 4, 1, 2, 3).contiguous()
+    wq_bits = wq_bits.view(-1, C, kW, kH)
 
-        ax.fill_between(np.arange(len(bc)), bc)
-        ax.plot(np.arange(len(bc)), bc, '-', color='k', linewidth=1.0)
+    # group size settings
+    group_size = 16
+    r_sum = torch.zeros(B, N, W*H)
+    r_bits = F.conv2d(xq_bits[:, :group_size], wq_bits[:, :group_size],
+                      stride=layer[1].conv.stride,
+                      padding=layer[1].conv.padding)
+    r_bits = r_bits.view(B, xB, N, wB, -1)
+    bc = np.bincount(r_bits.sum((1, 3)).view(-1).tolist())
 
-        if i == 0:
-            offset = 0
-        elif i == 4:
-            offset = -30
-        else:
-            offset = -10
-
-        # tail
-        ax.annotate('99%({})'.format(long_tail), xy=(long_tail, max_y*0.05),  textcoords='data',
-                    xytext=(long_tail-10, max_y * 0.5), fontsize=12, arrowprops=dict(arrowstyle="-"))
-        ax.plot([long_tail], [max_y*0.05], 'or', markeredgecolor='k', ms=4)
-
-        # max
-        ax.annotate('Max({})'.format(last_x), xy=(last_x, max_y*0.05),  textcoords='data',
-                    xytext=(last_x+offset, max_y * 0.5), fontsize=12, arrowprops=dict(arrowstyle="-"))
-        ax.plot([last_x], [max_y*0.05], 'or', markeredgecolor='k', ms=4)
-
-        ax.set_yticks(ytick)
-        ax.text(max_x, max_y, 'Group size of {}'.format(group_size), fontsize=14, ha='right')
-
-    fig.text(0.01, 0.5, 'Frequency of Term Pairs', rotation=90,
-             ha='center', va='center', fontsize=18)
-    axes[0].set_title('(a) Term Pairs per Group Size')
-    axes[4].set_xlabel('Number of Term Pairs')
-    plt.tight_layout()
-    fig.subplots_adjust(hspace=0.0, wspace=0.0)
+    bc = 100. * (bc / bc.sum())
+    xs = np.arange(len(bc))
+    long_tail = xs[np.cumsum(bc) > 99][0]
+    plt.figure(figsize=(10, 3.5))
+    rect = patches.Rectangle((long_tail, 0), 200, 3, fill=True, color='r', alpha=0.05, zorder=0)
+    plt.gca().add_patch(rect)
+    plt.plot([long_tail, long_tail], [0, 2.8], color='r', linewidth=2, linestyle='--',
+             zorder=1)
+    plt.fill_between(xs, bc, zorder=2, color='cornflowerblue')
+    plt.plot(xs, bc, '-k', linewidth=2)
+    plt.text(111, 1.3, '99% of partial dot\nproducts (groups of 16)\nrequire fewer than 110\nterm pair multiplications.\nThe theoretical max\nis 16*7*7 = 784.', fontdict={'color': 'r'})
+    plt.ylim(0, 2.6)
+    plt.xlim(0, 165)
+    plt.title('Term Pair Multiplications in Dot Products (Groups of 16)')
+    plt.xlabel('Term Pair Multiplications')
+    plt.ylabel('Frequency (%)')
     plt.savefig('figures/term-group-dist.pdf', dpi=300, bbox_inches='tight')
     plt.clf()

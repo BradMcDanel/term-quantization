@@ -1,93 +1,91 @@
 import argparse
-import math
-import copy
-import os
-import random
-import shutil
-import time
-import warnings
-from collections import OrderedDict
-import pickle
-from itertools import product
+import json
+from copy import deepcopy
 
-import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.parallel
-import torch.backends.cudnn as cudnn
-import torch.distributed as dist
-import torch.optim
-import torch.multiprocessing as mp
-import torch.utils.data
-from torch.utils.data.dataset import Dataset
-import torch.utils.data.distributed
-import torchvision.transforms as transforms
-import torchvision.datasets as datasets
-from torchvision.utils import make_grid, save_image
-import numpy as np
-import json
 
-
-import booth
-import models
+import cnn_models
+import tr_layer
+import profile_model
 import util
-plt = util.import_plt_settings(local_display=False)
 
-model_names = sorted(name for name in models.__dict__
-    if name.islower() and not name.startswith("__")
-    and callable(models.__dict__[name]))
+def compute_avg_terms(tr_params):
+    alphas = []
+    for weight_bits, group_size, weight_terms in tr_params[1:]:
+        alphas.append(weight_terms / group_size)
 
-parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
-parser.add_argument('data', metavar='DIR', help='path to dataset')
-parser.add_argument('-a', '--arch', metavar='ARCH', default='alexnet',
-                    choices=model_names,
-                    help='model architecture: ' +
-                        ' | '.join(model_names) +
+    return sum(alphas) / len(alphas)
+
+def eval_model(args, model, weight_bits, group_size, weight_terms, data_bits,
+               data_terms):
+    # replace Conv2d with TRConv2dLayer
+    tr_params = cnn_models.static_conv_layer_settings(model, weight_bits,
+                                                      group_size, weight_terms)
+    avg_terms = compute_avg_terms(tr_params)
+    qmodel = cnn_models.convert_model(model, tr_params, data_bits, data_terms)
+
+    # profiling
+    qmc = deepcopy(qmodel)
+    qmc.cuda()
+    x = torch.randn(1, 3, 224, 224).cuda()
+    tmacs, params = profile_model.get_model_ops(qmc, inputs=(x,))
+
+    qmodel = nn.DataParallel(qmodel)
+
+    # compute activation scale factors
+    _ = util.validate(val_loader, qmodel, criterion, args, verbose=args.verbose, pct=0.05)
+    tr_layer.set_tr_tracking(qmodel, False)
+
+    # evaluate model performance
+    _, acc = util.validate(val_loader, qmodel, criterion, args, verbose=args.verbose)
+
+    return acc, tmacs, avg_terms, params
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='PyTorch ImageNet Training')
+    parser.add_argument('val_dir', help='path to validation data folder')
+    parser.add_argument('-a', '--arch', metavar='ARCH', default='alexnet',
+                        choices=cnn_models.model_names(),
+                        help='model architecture: ' +
+                        ' | '.join(cnn_models.model_names()) +
                         ' (default: resnet18)')
-parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
-                    help='number of data loading workers (default: 4)')
-parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
-                    help='evaluate model on validation set')
-parser.add_argument('--msgpack-loader', dest='msgpack_loader', action='store_true',
-                    help='use custom msgpack dataloader')
-parser.add_argument('-b', '--batch-size', default=256, type=int,
-                    metavar='N',
-                    help='mini-batch size (default: 256), this is the total '
-                         'batch size of all GPUs on the current node when '
-                         'using Data Parallel or Distributed Data Parallel')
-parser.add_argument('-p', '--print-freq', default=10, type=int,
-                    metavar='N', help='print frequency (default: 10)')
-parser.add_argument('--gpu', default=None, type=int, help='GPU id to use.')
+    parser.add_argument('-j', '--workers', default=4, type=int, metavar='N',
+                        help='number of data loading workers (default: 4)')
+    parser.add_argument('-b', '--batch-size', default=256, type=int,
+                        metavar='N', help='mini-batch size (default: 256)')
+    parser.add_argument('-p', '--print-freq', default=10, type=int,
+                        metavar='N', help='print frequency (default: 10)')
+    parser.add_argument('--gpu', default=None, type=int, help='GPU id to use.')
+    parser.add_argument('-v', '--verbose', action='store_true', help='verbose flag')
 
-if __name__=='__main__':
     args = parser.parse_args()
-    model = models.__dict__[args.arch](pretrained=True)
-    model.cuda()
-    train_loader, train_sampler, val_loader = util.get_imagenet(args, 'ILSVRC-train-chunk.bin',
-                                                                num_train=1000, num_val=50000)
+    val_loader = util.get_imagenet_validation(args)
+    criterion = nn.CrossEntropyLoss().cuda(args.gpu)
+    model = cnn_models.__dict__[args.arch](pretrained=True).cuda(args.gpu)
 
-    model.cpu()
-    w_sfs = util.quantize_layers(model, bits=8)
-    model.cuda()
     results = {}
-    avg_terms = [1.0, 1.25, 1.5, 2.0, 3.0]
+
+    # Term Revealing Settings
+    weight_bits = 9
+    group_size = 8
+    data_bits = 9
+    data_terms = 3
+    avg_term_settings = [1.0, 1.25, 1.5, 2.0, 3.0]
     group_sizes = [1, 2, 8, 16, 32]
     for group_size in group_sizes:
-        name = str(group_size)
-        results[name] = {'avg_terms': [], 'acc': []}
-        for avg_term in avg_terms:
-            if group_size == 1 and not avg_term.is_integer():
-                continue
-            term = int(group_size * avg_term)
-            qmodel = models.convert_model(model, w_sfs, 3, 1, term, group_size,
-                                          3, 1, term, group_size, 1)
-            criterion = nn.CrossEntropyLoss().cuda()
-            qmodel = torch.nn.DataParallel(qmodel).cuda()
-            _, acc = util.validate(val_loader, qmodel, criterion, args, verbose=False)
-            acc = acc.item()
-            results[name]['avg_terms'].append(term / group_size)
-            results[name]['acc'].append(acc)
-            print(group_size, term, acc, term / group_size)
+        key = str(group_size)
+        results[key] = {'avg_terms': [], 'accs': [], 'tmacs': []}
+        for avg_term in avg_term_settings:
+            weight_terms = round(avg_term * group_size)
+            res = eval_model(args, model, weight_bits, group_size,
+                             weight_terms, data_bits, data_terms)
+            acc, tmacs, avg_term, params = res
+            print(data_terms, weight_terms, tmacs, acc)
+            results[key]['accs'].append(acc)
+            results[key]['tmacs'].append(tmacs)
+            results[key]['avg_terms'].append(avg_term)
 
-    with open('data/{}-group-results.txt'.format(args.arch), 'w') as fp:
+    with open('results/{}-group-size-results.json'.format(args.arch), 'w') as fp:
         json.dump(results, fp)

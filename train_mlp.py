@@ -107,7 +107,6 @@ if __name__ == '__main__':
                            transforms.Normalize((0.1307,), (0.3081,))
                        ])),
         batch_size=args.test_batch_size, shuffle=True, **kwargs)
-    assert False
 
     model = MNISTMLP().to(device)
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
@@ -119,4 +118,4 @@ if __name__ == '__main__':
         scheduler.step()
 
     if args.save_model:
-        torch.save(model.state_dict(), "data/mnist_cnn.pt")
+        torch.save(model.state_dict(), "pretrained_models/mnist_mlp.pt")

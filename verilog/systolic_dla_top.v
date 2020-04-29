@@ -1,22 +1,20 @@
 module systolic_dla_top #(
-    parameter SUBARRAY_WIDTH     = 4, // width of the subarray
-    parameter SUBARRAY_HEIGHT    = 4, // height of the subarray
+    parameter SUBARRAY_WIDTH     = 64  , // width of the subarray
+    parameter SUBARRAY_HEIGHT    = 128 , // height of the subarray
     parameter NUM_COE_ARRAY      = 16,
     parameter NUM_COMBINED_TERMS = 8 ,
     parameter NUM_BIT_EXPONENT   = 3
 ) (
     input                                                           clk            ,
     input                                                           reset          ,
-    input                                                  [1:0]    turn_on_signal ,
-
-    input                                        psel            ,
-    input       [                          15:0] paddr           ,
-    input                                        pwrite          ,
-    input       [                          31:0] pwdata          ,
-    input                                        penable         ,
-    output      [                          31:0] prdata          ,
-    output                                       pready          ,
-    
+    input  [                                                   1:0] turn_on        ,
+    input                                                           psel           ,
+    input  [                                                  15:0] paddr          ,
+    input                                                           pwrite         ,
+    input  [                                                  31:0] pwdata         ,
+    input                                                           penable        ,
+    output [                                                  31:0] prdata         ,
+    output                                                          pready         ,
     input  [                   8*NUM_COE_ARRAY*SUBARRAY_HEIGHT-1:0] accumulation_in,
     input  [NUM_COMBINED_TERMS*NUM_BIT_EXPONENT*SUBARRAY_WIDTH-1:0] dataflow_in    ,
     input  [                 NUM_COMBINED_TERMS*SUBARRAY_WIDTH-1:0] sign_flow_in   ,
@@ -24,20 +22,21 @@ module systolic_dla_top #(
     output [                   8*NUM_COE_ARRAY*SUBARRAY_HEIGHT-1:0] result_sign
 );
 
-    wire [   4:0] group_size                   ;
-    wire [   6:0] group_budget                 ;
-    wire [   3:0] data_terms                   ;
-    
+    wire [1:0]    turn_on_signal;
+    wire [4:0]    group_size    ;
+    wire [6:0]    group_budget  ;
+    wire [3:0]    data_terms    ;
+
     wire [31:0] reg_write_data;
     wire [15:0] reg_addr      ;
     wire [31:0] reg_read_data ;
     wire        reg_write     ;
     wire        reg_read      ;
     wire        reg_idle      ;
-    
+
     apb2reg i_apb2reg (
         .clk           (clk           ),
-        .reset_n       (~reset       ),
+        .reset_n       (~reset        ),
         .psel          (psel          ),
         .paddr         (paddr[15:2]   ),
         .pwrite        (pwrite        ),
@@ -52,18 +51,18 @@ module systolic_dla_top #(
         .reg_read      (reg_read      ),
         .reg_idle      (reg_idle      )
     );
-    
-    
+
+
     reg_define i_reg_define (
-        //.turn_on_signal               (turn_on_signal          ),
-        .input_acc_size               ({data_terms,group_budget,group_size}    ),
-        .write_data                   (reg_write_data               ),
-        .addr                         (reg_addr                     ),
-        .read_data                    (reg_read_data                ),
-        .write                        (reg_write                    ),
-        .read                         (reg_read                     ),
-        .clk                          (clk                          )
-    ); 
+        .turn_on_signal(turn_on_signal                      ),
+        .input_acc_size({data_terms,group_budget,group_size}),
+        .write_data    (reg_write_data                      ),
+        .addr          (reg_addr                            ),
+        .read_data     (reg_read_data                       ),
+        .write         (reg_write                           ),
+        .read          (reg_read                            ),
+        .clk           (clk                                 )
+    );
 
 
     //////////////////////////////////////////////////////
@@ -84,8 +83,8 @@ module systolic_dla_top #(
         .dataflow_in    (dataflow_in    ),
         .sign_flow_in   (sign_flow_in   ),
         .data_terms     (data_terms     ),
-        .group_size     (     group_size),
-        .group_budget   (   group_budget),
+        .group_size     (group_size     ),
+        .group_budget   (group_budget   ),
         .accumulation_in(accumulation_in),
         .result         (systolic_result)
     );
@@ -140,7 +139,7 @@ module systolic_dla_top #(
             HESE_encoder  i_j_hese (
                 .clk          (clk                                                              ),
                 .reset         (reset                                                          ),
-                .power_on      (turn_on_signal[0]),   
+                .power_on      (turn_on[0]),
                 .input_stream  (requant_serial_output[i]                                           ),
                 .output_stream (hese_serial_output[i]                               ),
                 .sign_stream   (hese_serial_sign_output[i]                        )
@@ -160,7 +159,7 @@ module systolic_dla_top #(
             comparator_truncator  i_j_comparator_truncator (
                 .clk          (clk                                                              ),
                 .reset         (reset                                                          ),
-                .power_on      (turn_on_signal[1]),                
+                .power_on      (turn_on[1]),
                 .input_stream  (hese_serial_output[(4*(i+1)-1):4*i]                                           ),
                 .input_sign_stream(hese_serial_sign_output[(4*(i+1)-1):4*i]),
                 .output_stream (result[(4*(i+1)-1):4*i]                               ),
