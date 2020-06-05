@@ -1,0 +1,204 @@
+CLUTTER_IM_MODULE=xim
+CONDA_SHLVL=1
+LD_LIBRARY_PATH=/usr/local/lib:/usr/local/cuda-9.2/lib64:/usr/local/lib:/usr/local/cuda-9.2/lib64:
+LS_COLORS=rs=0:di=01;34:ln=01;36:mh=00:pi=40;33:so=01;35:do=01;35:bd=40;33;01:cd=40;33;01:or=40;31;01:mi=00:su=37;41:sg=30;43:ca=30;41:tw=30;42:ow=34;42:st=37;44:ex=01;32:*.tar=01;31:*.tgz=01;31:*.arc=01;31:*.arj=01;31:*.taz=01;31:*.lha=01;31:*.lz4=01;31:*.lzh=01;31:*.lzma=01;31:*.tlz=01;31:*.txz=01;31:*.tzo=01;31:*.t7z=01;31:*.zip=01;31:*.z=01;31:*.Z=01;31:*.dz=01;31:*.gz=01;31:*.lrz=01;31:*.lz=01;31:*.lzo=01;31:*.xz=01;31:*.zst=01;31:*.tzst=01;31:*.bz2=01;31:*.bz=01;31:*.tbz=01;31:*.tbz2=01;31:*.tz=01;31:*.deb=01;31:*.rpm=01;31:*.jar=01;31:*.war=01;31:*.ear=01;31:*.sar=01;31:*.rar=01;31:*.alz=01;31:*.ace=01;31:*.zoo=01;31:*.cpio=01;31:*.7z=01;31:*.rz=01;31:*.cab=01;31:*.wim=01;31:*.swm=01;31:*.dwm=01;31:*.esd=01;31:*.jpg=01;35:*.jpeg=01;35:*.mjpg=01;35:*.mjpeg=01;35:*.gif=01;35:*.bmp=01;35:*.pbm=01;35:*.pgm=01;35:*.ppm=01;35:*.tga=01;35:*.xbm=01;35:*.xpm=01;35:*.tif=01;35:*.tiff=01;35:*.png=01;35:*.svg=01;35:*.svgz=01;35:*.mng=01;35:*.pcx=01;35:*.mov=01;35:*.mpg=01;35:*.mpeg=01;35:*.m2v=01;35:*.mkv=01;35:*.webm=01;35:*.ogm=01;35:*.mp4=01;35:*.m4v=01;35:*.mp4v=01;35:*.vob=01;35:*.qt=01;35:*.nuv=01;35:*.wmv=01;35:*.asf=01;35:*.rm=01;35:*.rmvb=01;35:*.flc=01;35:*.avi=01;35:*.fli=01;35:*.flv=01;35:*.gl=01;35:*.dl=01;35:*.xcf=01;35:*.xwd=01;35:*.yuv=01;35:*.cgm=01;35:*.emf=01;35:*.ogv=01;35:*.ogx=01;35:*.aac=00;36:*.au=00;36:*.flac=00;36:*.m4a=00;36:*.mid=00;36:*.midi=00;36:*.mka=00;36:*.mp3=00;36:*.mpc=00;36:*.ogg=00;36:*.ra=00;36:*.wav=00;36:*.oga=00;36:*.opus=00;36:*.spx=00;36:*.xspf=00;36:
+CONDA_EXE=/home/USER/anaconda3/bin/conda
+LESSCLOSE=/usr/bin/lesspipe %s %s
+XDG_MENU_PREFIX=gnome-
+_=/usr/bin/env
+LANG=en_US.UTF-8
+DISPLAY=:0
+OLDPWD=/hdd1
+GNOME_SHELL_SESSION_MODE=ubuntu
+COLORTERM=truecolor
+USERNAME=USER
+CONDA_PREFIX=/home/USER/anaconda3
+XDG_VTNR=1
+SSH_AUTH_SOCK=/run/user/1000/keyring/ssh
+MANDATORY_PATH=/usr/share/gconf/ubuntu.mandatory.path
+S_COLORS=auto
+_CE_M=
+XDG_SESSION_ID=1
+USER=USER
+DESKTOP_SESSION=ubuntu
+QT4_IM_MODULE=xim
+TEXTDOMAINDIR=/usr/share/locale/
+GNOME_TERMINAL_SCREEN=/org/gnome/Terminal/screen/17eb5a79_f5bc_4bd6_8727_9937152dfe6c
+DEFAULTS_PATH=/usr/share/gconf/ubuntu.default.path
+PWD=/hdd1/code
+HOME=/home/USER
+CONDA_PYTHON_EXE=/home/USER/anaconda3/bin/python
+TEXTDOMAIN=im-config
+SSH_AGENT_PID=1613
+QT_ACCESSIBILITY=1
+TMUX=/tmp/tmux-1000/default,2886,4
+XDG_SESSION_TYPE=x11
+XDG_DATA_DIRS=/usr/share/ubuntu:/usr/local/share:/usr/share:/var/lib/snapd/desktop
+_CE_CONDA=
+XDG_SESSION_DESKTOP=ubuntu
+GJS_DEBUG_OUTPUT=stderr
+CONDA_PROMPT_MODIFIER=(base) 
+GTK_MODULES=gail:atk-bridge
+CXX=g++
+WINDOWPATH=1
+SHELL=/bin/bash
+TERM=screen-256color
+VTE_VERSION=5202
+QT_IM_MODULE=ibus
+XMODIFIERS=@im=ibus
+IM_CONFIG_PHASE=2
+XDG_CURRENT_DESKTOP=ubuntu:GNOME
+GPG_AGENT_INFO=/run/user/1000/gnupg/S.gpg-agent:0:1
+GNOME_TERMINAL_SERVICE=:1.74
+LD_RUN_PATH=/usr/local/lib
+TMUX_PANE=%21
+SHLVL=3
+XDG_SEAT=seat0
+GDMSESSION=ubuntu
+GNOME_DESKTOP_SESSION_ID=this-is-deprecated
+LOGNAME=USER
+DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+XDG_RUNTIME_DIR=/run/user/1000
+XAUTHORITY=/run/user/1000/gdm/Xauthority
+XDG_CONFIG_DIRS=/etc/xdg/xdg-ubuntu:/etc/xdg
+PATH=/home/USER/.cargo/bin:/bin/snap:/home/USER/.yarn/bin:/home/USER/.config/yarn/global/node_modules/.bin:/home/USER/.cargo/bin:/usr/local/cuda-9.2/bin:/home/USER/anaconda3/bin:/home/USER/anaconda3/condabin:/bin/snap:/home/USER/.yarn/bin:/home/USER/.config/yarn/global/node_modules/.bin:/home/USER/.cargo/bin:/usr/local/cuda-9.2/bin:/home/USER/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/home/USER/.dotnet/tools:/home/USER/.dotnet/tools
+CONDA_DEFAULT_ENV=base
+GJS_DEBUG_TOPICS=JS ERROR;JS LOG
+SESSION_MANAGER=local/ubuntu:@/tmp/.ICE-unix/1511,unix/ubuntu:/tmp/.ICE-unix/1511
+LESSOPEN=| /usr/bin/lesspipe %s
+GTK_IM_MODULE=ibus
+Distributor ID:	Ubuntu
+Description:	Ubuntu 18.04.2 LTS
+Release:	18.04
+Codename:	bionic
+Linux ubuntu 4.15.0-99-generic #100-Ubuntu SMP Wed Apr 22 20:32:56 UTC 2020 x86_64 x86_64 x86_64 GNU/Linux
+Architecture:        x86_64
+CPU op-mode(s):      32-bit, 64-bit
+Byte Order:          Little Endian
+CPU(s):              8
+On-line CPU(s) list: 0-7
+Thread(s) per core:  2
+Core(s) per socket:  4
+Socket(s):           1
+NUMA node(s):        1
+Vendor ID:           GenuineIntel
+CPU family:          6
+Model:               94
+Model name:          Intel(R) Core(TM) i7-6700K CPU @ 4.00GHz
+Stepping:            3
+CPU MHz:             1840.254
+CPU max MHz:         4300.0000
+CPU min MHz:         800.0000
+BogoMIPS:            8016.00
+Virtualization:      VT-x
+L1d cache:           32K
+L1i cache:           32K
+L2 cache:            256K
+L3 cache:            8192K
+NUMA node0 CPU(s):   0-7
+Flags:               fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf tsc_known_freq pni pclmulqdq dtes64 monitor ds_cpl vmx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb invpcid_single pti ssbd ibrs ibpb stibp tpr_shadow vnmi flexpriority ept vpid fsgsbase tsc_adjust bmi1 hle avx2 smep bmi2 erms invpcid rtm mpx rdseed adx smap clflushopt intel_pt xsaveopt xsavec xgetbv1 xsaves dtherm ida arat pln pts hwp hwp_notify hwp_act_window hwp_epp md_clear flush_l1d
+MemTotal:       32851880 kB
+MemFree:         5390936 kB
+MemAvailable:   21561148 kB
+Buffers:         2506856 kB
+Cached:         13625584 kB
+SwapCached:        52600 kB
+Active:         15808380 kB
+Inactive:        9553524 kB
+Active(anon):    8633056 kB
+Inactive(anon):  1383724 kB
+Active(file):    7175324 kB
+Inactive(file):  8169800 kB
+Unevictable:         208 kB
+Mlocked:             208 kB
+SwapTotal:       2097148 kB
+SwapFree:        1591516 kB
+Dirty:              1500 kB
+Writeback:             0 kB
+AnonPages:       9192632 kB
+Mapped:          1473004 kB
+Shmem:            877636 kB
+Slab:            1559204 kB
+SReclaimable:    1291964 kB
+SUnreclaim:       267240 kB
+KernelStack:       26076 kB
+PageTables:       159436 kB
+NFS_Unstable:          0 kB
+Bounce:                0 kB
+WritebackTmp:          0 kB
+CommitLimit:    18523088 kB
+Committed_AS:   33724252 kB
+VmallocTotal:   34359738367 kB
+VmallocUsed:           0 kB
+VmallocChunk:          0 kB
+HardwareCorrupted:     0 kB
+AnonHugePages:         0 kB
+ShmemHugePages:        0 kB
+ShmemPmdMapped:        0 kB
+CmaTotal:              0 kB
+CmaFree:               0 kB
+HugePages_Total:       0
+HugePages_Free:        0
+HugePages_Rsvd:        0
+HugePages_Surp:        0
+Hugepagesize:       2048 kB
+DirectMap4k:    23733804 kB
+DirectMap2M:     9734144 kB
+DirectMap1G:     1048576 kB
+NAME   MAJ:MIN RM   SIZE RO TYPE MOUNTPOINT
+sda      8:0    0 465.8G  0 disk 
+├─sda1   8:1    0    16M  0 part 
+├─sda2   8:2    0 465.2G  0 part 
+└─sda3   8:3    0   519M  0 part 
+sdd      8:48   0   2.7T  0 disk 
+└─sdd1   8:49   0   2.7T  0 part /hdd1
+Fri Jun  5 12:36:57 2020       
++-----------------------------------------------------------------------------+
+| NVIDIA-SMI 430.26       Driver Version: 430.26       CUDA Version: 10.2     |
+|-------------------------------+----------------------+----------------------+
+| GPU  Name        Persistence-M| Bus-Id        Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp  Perf  Pwr:Usage/Cap|         Memory-Usage | GPU-Util  Compute M. |
+|===============================+======================+======================|
+|   0  GeForce GTX TIT...  Off  | 00000000:01:00.0  On |                  N/A |
+| 28%   65C    P8    22W / 250W |   1978MiB / 12209MiB |     11%      Default |
++-------------------------------+----------------------+----------------------+
+|   1  GeForce GTX TIT...  Off  | 00000000:02:00.0 Off |                  N/A |
+| 22%   42C    P8    17W / 250W |      1MiB / 12212MiB |      0%      Default |
++-------------------------------+----------------------+----------------------+
+                                                                               
++-----------------------------------------------------------------------------+
+| Processes:                                                       GPU Memory |
+|  GPU       PID   Type   Process name                             Usage      |
+|=============================================================================|
+|    0      1419      G   /usr/lib/xorg/Xorg                           396MiB |
+|    0      1677      G   /usr/bin/gnome-shell                         290MiB |
++-----------------------------------------------------------------------------+
+H/W path        Device       Class          Description
+=======================================================
+                             system         Computer
+/0                           bus            Motherboard
+/0/0                         memory         31GiB System memory
+/0/1                         processor      Intel(R) Core(TM) i7-6700K CPU @ 4.00GHz
+/0/100                       bridge         Xeon E3-1200 v5/E3-1500 v5/6th Gen Core Processor Host Bridge/DRAM Registers
+/0/100/1                     bridge         Xeon E3-1200 v5/E3-1500 v5/6th Gen Core Processor PCIe Controller (x16)
+/0/100/1/0                   display        GM200 [GeForce GTX TITAN X]
+/0/100/1/0.1                 multimedia     GM200 High Definition Audio
+/0/100/1.1                   bridge         Xeon E3-1200 v5/E3-1500 v5/6th Gen Core Processor PCIe Controller (x8)
+/0/100/1.1/0                 display        GM200 [GeForce GTX TITAN X]
+/0/100/1.1/0.1               multimedia     GM200 High Definition Audio
+/0/100/14                    bus            100 Series/C230 Series Chipset Family USB 3.0 xHCI Controller
+/0/100/16                    communication  100 Series/C230 Series Chipset Family MEI Controller #1
+/0/100/17                    storage        Q170/Q150/B150/H170/H110/Z170/CM236 Chipset SATA Controller [AHCI Mode]
+/0/100/1b                    bridge         100 Series/C230 Series Chipset Family PCI Express Root Port #17
+/0/100/1c                    bridge         100 Series/C230 Series Chipset Family PCI Express Root Port #1
+/0/100/1c/0                  bus            ASM1142 USB 3.1 Host Controller
+/0/100/1c.2                  bridge         100 Series/C230 Series Chipset Family PCI Express Root Port #3
+/0/100/1c.2/0                bridge         ASM1083/1085 PCIe to PCI Bridge
+/0/100/1d                    bridge         100 Series/C230 Series Chipset Family PCI Express Root Port #9
+/0/100/1f                    bridge         Z170 Chipset LPC/eSPI Controller
+/0/100/1f.2                  memory         Memory controller
+/0/100/1f.3                  multimedia     100 Series/C230 Series Chipset Family HD Audio Controller
+/0/100/1f.4                  bus            100 Series/C230 Series Chipset Family SMBus
+/0/100/1f.6     enp0s31f6    network        Ethernet Connection (2) I219-V
+/1              docker0      network        Ethernet interface
+/2              veth41b8629  network        Ethernet interface
