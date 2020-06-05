@@ -1,4 +1,5 @@
 # Term Revealing
+[![DOI](https://zenodo.org/badge/178455477.svg)](https://zenodo.org/badge/latestdoi/178455477)
 
 A method of applying an addition quantization step onto already quantized DNNs. 
 
